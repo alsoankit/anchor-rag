@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from anchor.answer import ask
 from anchor.llm import usage
 from anchor.store import connect
-from eval.metrics import faithfulness, gold_recall, retrieval_hit
+from eval.metrics import declined, faithfulness, gold_recall, retrieval_hit
 
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"
@@ -37,11 +37,17 @@ def run_config(name: str, questions: list[dict], corpus: str, k: int) -> dict:
             result = ask(item["question"], corpus=corpus, k=k, conn=conn, **settings)
             answerable = item["kind"] != "unanswerable"
 
+            # The pipeline knows when it refused on purpose. It does not know when the
+            # writer declined in its own words, which is the only way the naive baseline
+            # can decline at all, so the reply gets read rather than pattern matched.
+            backed_out = result.refused or declined(item["question"], result.text)
+
             row = {
                 "id": item["id"],
                 "kind": item["kind"],
                 "question": item["question"],
-                "refused": result.refused,
+                "refused": backed_out,
+                "refused_by_pipeline": result.refused,
                 "answer": result.text,
                 "retrieved": [h.unit_id for h in result.hits],
                 "followed": [h.citation for h in result.hits if h.followed],
@@ -50,7 +56,7 @@ def run_config(name: str, questions: list[dict], corpus: str, k: int) -> dict:
                 "seconds": round(result.seconds, 2),
             }
 
-            if answerable and not result.refused:
+            if answerable and not backed_out:
                 row["faithfulness"] = round(faithfulness(result.text, result.hits), 3)
             if result.checks:
                 row["unsupported_claims"] = len(result.unsupported)
