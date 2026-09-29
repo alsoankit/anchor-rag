@@ -15,6 +15,8 @@ HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"
 
 CONFIGS = {
+    "naive": dict(strategy="structural", hop=False, gate=False, check=False,
+                  grounded_prompt=False),
     "plain": dict(strategy="structural", hop=False, gate=False, check=False),
     "fixed-size": dict(strategy="fixed-1000-200", hop=False, gate=False, check=False),
     "hop": dict(strategy="structural", hop=True, gate=False, check=False),

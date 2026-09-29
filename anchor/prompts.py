@@ -8,6 +8,11 @@ Rules you never break:
 
 Write plainly and stop when the question is answered."""
 
+# The baseline to measure against. No instruction to stay inside the sources and no way
+# to refuse, which is what a pipeline looks like when retrieval is treated as the whole
+# job and the prompt is an afterthought. It exists to show what the other prompt buys.
+NAIVE_SYSTEM = """Answer the question using the sources below."""
+
 ANSWER_USER = """Sources:
 
 {sources}

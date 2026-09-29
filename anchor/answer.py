@@ -8,7 +8,7 @@ from anchor.config import CONFIDENT_SCORE, HOPELESS_SCORE, MAX_REWRITES, TOP_K
 from anchor.corpora import ABOUT
 from anchor.llm import structured, write
 from anchor.prompts import (ANSWER_SYSTEM, ANSWER_USER, JUDGE_SYSTEM, JUDGE_USER,
-                            REWRITE_SYSTEM, REWRITE_USER)
+                            NAIVE_SYSTEM, REWRITE_SYSTEM, REWRITE_USER)
 from anchor.retrieve import retrieve
 from anchor.verify import Checked, format_sources, verify
 
@@ -78,7 +78,7 @@ def rewrite(question: str, corpus: str) -> str:
 
 def ask(question: str, corpus: str = "aiact", strategy: str = "structural",
         k: int = TOP_K, hop: bool = True, gate: bool = True, check: bool = True,
-        conn=None) -> Answer:
+        grounded_prompt: bool = True, conn=None) -> Answer:
     started = time.time()
     trace: list[str] = []
     asked = question
@@ -107,7 +107,7 @@ def ask(question: str, corpus: str = "aiact", strategy: str = "structural",
 
     text = write(
         ANSWER_USER.format(sources=format_sources(hits), question=question),
-        system=ANSWER_SYSTEM,
+        system=ANSWER_SYSTEM if grounded_prompt else NAIVE_SYSTEM,
     )
 
     text = re.sub(r"【(\d+(?:\]\[|\s*,\s*)?\d*)】", r"[\1]", text)
