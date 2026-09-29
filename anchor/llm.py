@@ -4,10 +4,11 @@ import random
 import re
 import time
 
+import httpx
 from groq import BadRequestError, Groq, RateLimitError
 from pydantic import BaseModel, ValidationError
 
-from anchor.config import GROQ_API_KEY, WORKER_MODEL, WRITER_MODEL
+from anchor.config import GEMINI_API_KEY, GROQ_API_KEY, WORKER_MODEL, WRITER_MODEL
 
 client = Groq(api_key=GROQ_API_KEY)
 
@@ -39,12 +40,84 @@ def _wait_for(error: RateLimitError, attempt: int) -> float:
     return min(2 ** attempt, 30) + random.random()
 
 
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+
+def _gemini(prompt: str, system: str, model: str, temperature: float,
+            max_tokens: int, json_mode: bool) -> str:
+    """Same contract as chat(), different wire format.
+
+    Worth having for one reason: the judges grading this pipeline were all open-weight
+    models served by the same provider as the pipeline itself, so their agreeing with
+    each other proved less than it looked like it did. This one is a different lineage.
+
+    Two things about Gemini 3 that cost me an hour. It thinks before answering and the
+    thinking comes out of the same output budget, so a tight maxOutputTokens returns an
+    empty answer with a MAX_TOKENS finish reason rather than a short one — which is why
+    there is a floor under the budget regardless of what the caller asked for. And
+    thinkingBudget, which is what the older models take, is quietly ignored here;
+    thinkingLevel is the one that works.
+    """
+    floor = max(max_tokens, 1024)
+
+    for attempt in range(MAX_TRIES):
+        config = {
+            "temperature": temperature,
+            "maxOutputTokens": floor * (attempt + 1),
+            "thinkingConfig": {"thinkingLevel": "low"},
+        }
+        if json_mode:
+            config["responseMimeType"] = "application/json"
+
+        body = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": config}
+        if system:
+            body["systemInstruction"] = {"parts": [{"text": system}]}
+
+        response = httpx.post(GEMINI_URL.format(model=model),
+                              headers={"x-goog-api-key": GEMINI_API_KEY},
+                              json=body, timeout=120)
+
+        # 503 here means the shared model is busy rather than anything being wrong with
+        # the request, and it clears on its own within a few seconds.
+        if response.status_code == 429 or response.status_code >= 500:
+            if attempt == MAX_TRIES - 1:
+                response.raise_for_status()
+            time.sleep(min(2 ** attempt, 30) + random.random())
+            continue
+
+        response.raise_for_status()
+        payload = response.json()
+
+        usage["calls"] += 1
+        meta = payload.get("usageMetadata", {})
+        usage["prompt_tokens"] += meta.get("promptTokenCount", 0)
+        usage["completion_tokens"] += meta.get("candidatesTokenCount", 0)
+
+        candidates = payload.get("candidates", [])
+        if not candidates:
+            return ""
+
+        parts = candidates[0].get("content", {}).get("parts", [])
+        text = "".join(p.get("text", "") for p in parts).strip()
+
+        # Thinking ate the budget. Same request, more room.
+        if not text and candidates[0].get("finishReason") == "MAX_TOKENS":
+            continue
+
+        return text
+
+    return ""
+
+
 def chat(prompt: str, system: str = "", model: str = WORKER_MODEL,
          temperature: float = 0.0, max_tokens: int = 900, json_mode: bool = False) -> str:
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
+
+    if model.startswith("gemini"):
+        return _gemini(prompt, system, model, temperature, max_tokens, json_mode)
 
     kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
 

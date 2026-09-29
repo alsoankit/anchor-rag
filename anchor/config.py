@@ -9,6 +9,7 @@ load_dotenv(ROOT / ".env")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://anchor:anchor@localhost:5433/anchor")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 CACHE_DIR = ROOT / "data" / "raw"
 
@@ -24,6 +25,11 @@ WORKER_MODEL = os.getenv("ANCHOR_WORKER_MODEL", "openai/gpt-oss-20b")
 # Only used by the eval. It is a different model family on purpose, so that grading the
 # pipeline is not the pipeline grading itself.
 EVAL_MODEL = "qwen/qwen3.8-27b"
+
+# A third opinion for the calibration, and the one that carries the most weight because it
+# is the only judge that is not an open-weight model served by the same provider as the
+# pipeline. If all three agree, the agreement is not an artefact of a shared lineage.
+THIRD_MODEL = "gemini-3.8-flash"
 
 # Five was the guess, eight is what the retrieval sweep actually picked: with the
 # citation hop on, k=8 finds the gold unit for every question in the eval set, while

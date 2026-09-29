@@ -1,13 +1,18 @@
 """How much should the grounding numbers be trusted?
 
-Everything the eval reports about faithfulness is one model's opinion of another
-model's output. There are no human labels behind it, so the honest thing is to measure
-how stable that opinion is rather than present it as ground truth. This runs a second
-judge, from a different model family, over the same statements the pipeline's own
-checker ruled on, and reports how often the two agree.
+Everything the eval reports about faithfulness is one model's opinion of another model's
+output. There are no human labels behind it, so the honest thing is to measure how stable
+that opinion is rather than present it as ground truth.
 
-Agreement is not accuracy. It only says whether the signal is stable enough that a
-difference between two configurations means something.
+Three judges rule on the same statements. The pipeline's own checker, a second open-weight
+model from a different family, and a Gemini model from a different provider entirely. The
+third one matters more than it looks: the first two are both open-weight models served
+through the same API, so their agreeing could easily be a shared-lineage artefact rather
+than the statements being genuinely clear-cut. A judge trained by someone else, running
+somewhere else, is the only one that can rule that out.
+
+Agreement is still not accuracy. It only says whether the signal is stable enough that a
+difference between two configurations means something rather than noise.
 """
 import json
 import sys
@@ -15,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from anchor.config import EVAL_MODEL
+from anchor.config import EVAL_MODEL, THIRD_MODEL, WORKER_MODEL
 from anchor.llm import structured
 from anchor.prompts import CHECK_SYSTEM, CHECK_USER
 from anchor.store import connect
@@ -38,48 +43,66 @@ def rebuild_hits(unit_ids: list[str], conn) -> list[Hit]:
     return hits
 
 
+def judge(claim: str, sources: str, model: str) -> bool | None:
+    try:
+        result = structured(CHECK_USER.format(sources=sources, claim=claim),
+                            Support, system=CHECK_SYSTEM, max_tokens=400, model=model)
+    except (ValueError, Exception):
+        return None
+    return result.supported
+
+
 def main():
     run = json.loads((HERE / "results" / "aiact-full.json").read_text())
     conn = connect()
 
-    agree = disagree = 0
-    conflicts = []
-
+    verdicts = []
     for row in run["rows"]:
-        if row.get("total_claims") is None or row["refused"]:
-            continue
-        detail = row.get("claim_detail")
-        if not detail:
+        if row["refused"] or not row.get("claim_detail"):
             continue
 
         hits = rebuild_hits(row["retrieved"], conn)
         sources = format_sources(hits)
 
-        for claim, first_verdict in detail:
-            try:
-                second = structured(CHECK_USER.format(sources=sources, claim=claim),
-                                    Support, system=CHECK_SYSTEM, max_tokens=400,
-                                    model=EVAL_MODEL)
-            except ValueError:
+        for claim, pipeline_said in row["claim_detail"]:
+            second = judge(claim, sources, EVAL_MODEL)
+            third = judge(claim, sources, THIRD_MODEL)
+            if second is None or third is None:
                 continue
-            if second.supported == first_verdict:
-                agree += 1
-            else:
-                disagree += 1
-                conflicts.append({"question": row["question"], "claim": claim,
-                                  "pipeline": first_verdict, "second_judge": second.supported})
+            verdicts.append({"question": row["question"], "claim": claim,
+                             "pipeline": pipeline_said, "second": second, "third": third})
 
     conn.close()
-    total = agree + disagree
-    print(f"statements compared: {total}")
-    if total:
-        print(f"the two judges agreed on {agree} ({agree / total:.0%})")
-    for c in conflicts[:10]:
-        print(f"\n  claim: {c['claim'][:110]}")
-        print(f"  pipeline said supported={c['pipeline']}, second judge said {c['second_judge']}")
 
-    (HERE / "results" / "calibration.json").write_text(json.dumps(
-        {"compared": total, "agreed": agree, "conflicts": conflicts}, indent=2))
+    if not verdicts:
+        print("nothing to compare — run the full config first")
+        return
+
+    def agreement(a: str, b: str) -> float:
+        return sum(1 for v in verdicts if v[a] == v[b]) / len(verdicts)
+
+    unanimous = sum(1 for v in verdicts if v["pipeline"] == v["second"] == v["third"])
+
+    print(f"statements compared: {len(verdicts)}")
+    print(f"  pipeline ({WORKER_MODEL}) vs second ({EVAL_MODEL}): {agreement('pipeline', 'second'):.0%}")
+    print(f"  pipeline vs third ({THIRD_MODEL}): {agreement('pipeline', 'third'):.0%}")
+    print(f"  second vs third: {agreement('second', 'third'):.0%}")
+    print(f"  all three agreed: {unanimous}/{len(verdicts)} ({unanimous / len(verdicts):.0%})")
+
+    split = [v for v in verdicts if not (v["pipeline"] == v["second"] == v["third"])]
+    print(f"\nstatements the judges split on ({len(split)}):")
+    for v in split[:10]:
+        print(f"\n  claim: {v['claim'][:110]}")
+        print(f"  pipeline={v['pipeline']}  second={v['second']}  third={v['third']}")
+
+    (HERE / "results" / "calibration.json").write_text(json.dumps({
+        "compared": len(verdicts),
+        "pipeline_vs_second": agreement("pipeline", "second"),
+        "pipeline_vs_third": agreement("pipeline", "third"),
+        "second_vs_third": agreement("second", "third"),
+        "unanimous": unanimous,
+        "verdicts": verdicts,
+    }, indent=2))
 
 
 if __name__ == "__main__":
