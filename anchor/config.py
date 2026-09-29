@@ -8,7 +8,14 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://anchor:anchor@localhost:5433/anchor")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+# More than one key because the daily token budget is enforced per organisation, and a
+# single free tier account does not have enough of it to finish an eval run. Anything
+# named GROQ_API_KEY, GROQ_API_KEY2, GROQ_API_KEY3 and so on gets picked up.
+GROQ_API_KEYS = [
+    value for name, value in sorted(os.environ.items())
+    if name.startswith("GROQ_API_KEY") and value.strip()
+]
+GROQ_API_KEY = GROQ_API_KEYS[0] if GROQ_API_KEYS else ""
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 CACHE_DIR = ROOT / "data" / "raw"

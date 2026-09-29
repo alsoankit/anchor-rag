@@ -8,11 +8,32 @@ import httpx
 from groq import BadRequestError, Groq, RateLimitError
 from pydantic import BaseModel, ValidationError
 
-from anchor.config import GEMINI_API_KEY, GROQ_API_KEY, WORKER_MODEL, WRITER_MODEL
+from anchor.config import GEMINI_API_KEY, GROQ_API_KEYS, WORKER_MODEL, WRITER_MODEL
 
-client = Groq(api_key=GROQ_API_KEY)
+clients = [Groq(api_key=key) for key in GROQ_API_KEYS]
+_current = 0
 
-usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "waited": 0.0}
+
+def client() -> Groq:
+    return clients[_current]
+
+
+def _rotate() -> bool:
+    """Move to the next account when this one has spent its day.
+
+    The per minute limit is something you wait out. The daily one is not — once it is
+    gone it is gone for hours, and an eval half finished on one model is worth less than
+    no eval at all, because you cannot tell a configuration difference from a model
+    difference. So the keys are a list and the budget is the sum of them.
+    """
+    global _current
+    if _current + 1 >= len(clients):
+        return False
+    _current += 1
+    return True
+
+usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "waited": 0.0,
+         "rotations": 0}
 
 MAX_TRIES = 6
 
@@ -123,16 +144,20 @@ def chat(prompt: str, system: str = "", model: str = WORKER_MODEL,
 
     for attempt in range(MAX_TRIES):
         try:
-            response = client.chat.completions.create(
+            response = client().chat.completions.create(
                 model=model, messages=messages, temperature=temperature,
                 max_tokens=max_tokens, **kwargs,
             )
             break
         except RateLimitError as error:
-            if attempt == MAX_TRIES - 1:
-                raise
             pause = _wait_for(error, attempt)
-            if pause > PATIENCE:
+            daily = "per day" in str(error) or pause > PATIENCE
+            if daily:
+                if _rotate():
+                    usage["rotations"] += 1
+                    continue
+                raise
+            if attempt == MAX_TRIES - 1:
                 raise
             usage["waited"] += pause
             time.sleep(pause)
