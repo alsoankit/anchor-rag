@@ -21,6 +21,10 @@ EMBED_DIM = 384
 WRITER_MODEL = "openai/gpt-oss-120b"
 WORKER_MODEL = "openai/gpt-oss-20b"
 
+# Only used by the eval. It is a different model family on purpose, so that grading the
+# pipeline is not the pipeline grading itself.
+EVAL_MODEL = "qwen/qwen3.8-27b"
+
 TOP_K = 5
 
 # Similarity, not distance, so higher is better. Above the first number the evidence

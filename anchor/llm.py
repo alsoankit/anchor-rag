@@ -42,7 +42,7 @@ def _salvage(text: str) -> str:
 
 
 def structured(prompt: str, schema: type[BaseModel], system: str = "",
-               max_tokens: int = 900, attempts: int = 2):
+               max_tokens: int = 900, attempts: int = 2, model: str = WORKER_MODEL):
     """Ask for JSON and keep asking until it parses into the model we wanted.
 
     The retry hands the model its own broken output and the validation error, which
@@ -62,7 +62,7 @@ def structured(prompt: str, schema: type[BaseModel], system: str = "",
                    f"Reply was:\n{reply}\n\nThe problem:\n{last_error}\n\n"
                    f"Return corrected JSON matching:\n{hint}")
 
-        reply = chat(ask, system, json_mode=True, max_tokens=max_tokens)
+        reply = chat(ask, system, model=model, json_mode=True, max_tokens=max_tokens)
         try:
             return schema.model_validate_json(_salvage(reply))
         except (ValidationError, json.JSONDecodeError, ValueError) as error:
