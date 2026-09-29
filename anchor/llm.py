@@ -2,6 +2,7 @@ import json
 import os
 import random
 import re
+import threading
 import time
 
 import httpx
@@ -12,25 +13,35 @@ from anchor.config import GEMINI_API_KEY, GROQ_API_KEYS, WORKER_MODEL, WRITER_MO
 
 clients = [Groq(api_key=key) for key in GROQ_API_KEYS]
 _current = 0
+_switch = threading.Lock()
 
 
 def client() -> Groq:
     return clients[_current]
 
 
-def _rotate() -> bool:
+def _rotate(exhausted: int) -> bool:
     """Move to the next account when this one has spent its day.
 
     The per minute limit is something you wait out. The daily one is not — once it is
     gone it is gone for hours, and an eval half finished on one model is worth less than
     no eval at all, because you cannot tell a configuration difference from a model
     difference. So the keys are a list and the budget is the sum of them.
+
+    Claim checks run four at a time, so four threads can hit the wall on the same key at
+    the same moment. Each passes in the key it was using, and a rotation only happens if
+    nobody has already moved past it — otherwise the first thread to notice would rotate
+    once per thread and walk straight off the end of the list.
     """
     global _current
-    if _current + 1 >= len(clients):
-        return False
-    _current += 1
-    return True
+    with _switch:
+        if exhausted < _current:
+            return True
+        if _current + 1 >= len(clients):
+            return False
+        _current += 1
+        usage["rotations"] += 1
+        return True
 
 usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "waited": 0.0,
          "rotations": 0}
@@ -143,6 +154,7 @@ def chat(prompt: str, system: str = "", model: str = WORKER_MODEL,
     kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
 
     for attempt in range(MAX_TRIES):
+        using = _current
         try:
             response = client().chat.completions.create(
                 model=model, messages=messages, temperature=temperature,
@@ -153,8 +165,7 @@ def chat(prompt: str, system: str = "", model: str = WORKER_MODEL,
             pause = _wait_for(error, attempt)
             daily = "per day" in str(error) or pause > PATIENCE
             if daily:
-                if _rotate():
-                    usage["rotations"] += 1
+                if _rotate(using):
                     continue
                 raise
             if attempt == MAX_TRIES - 1:
