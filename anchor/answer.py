@@ -1,21 +1,18 @@
+import re
 import time
 from dataclasses import dataclass, field
 
 from pydantic import BaseModel
 
 from anchor.config import CONFIDENT_SCORE, HOPELESS_SCORE, MAX_REWRITES, TOP_K
-from anchor.llm import write
+from anchor.corpora import ABOUT
+from anchor.llm import structured, write
 from anchor.prompts import (ANSWER_SYSTEM, ANSWER_USER, JUDGE_SYSTEM, JUDGE_USER,
                             REWRITE_SYSTEM, REWRITE_USER)
 from anchor.retrieve import retrieve
-from anchor.verify import Checked, format_sources, structured, verify
+from anchor.verify import Checked, format_sources, verify
 
 REFUSAL = "I don't have enough in the sources to answer that."
-
-ABOUT = {
-    "aiact": "the EU Artificial Intelligence Act, its articles and annexes",
-    "peps": "Python Enhancement Proposals",
-}
 
 
 class Verdict(BaseModel):
@@ -112,6 +109,8 @@ def ask(question: str, corpus: str = "aiact", strategy: str = "structural",
         ANSWER_USER.format(sources=format_sources(hits), question=question),
         system=ANSWER_SYSTEM,
     )
+
+    text = re.sub(r"【(\d+(?:\]\[|\s*,\s*)?\d*)】", r"[\1]", text)
 
     if "NOT IN SOURCES" in text.upper():
         trace.append("the writer refused after reading the sources")

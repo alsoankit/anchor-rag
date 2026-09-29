@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 
+from anchor.corpora import ABOUT
 from anchor.llm import structured
 from anchor.prompts import ASSESS_SYSTEM, ASSESS_USER
 from anchor.retrieve import retrieve
@@ -63,8 +64,6 @@ def assess(description: str, corpus: str = "aiact", strategy: str = "structural"
     is broken into searches first, each aspect is retrieved separately, and the writing
     step works over the union.
     """
-    from anchor.answer import ABOUT
-
     about = ABOUT.get(corpus, corpus)
     searches = plan(description, about)
 

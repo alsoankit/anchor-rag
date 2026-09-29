@@ -225,3 +225,10 @@ class PEPs(Corpus):
 
 
 REGISTRY = {"aiact": AIAct, "peps": PEPs}
+
+# Used when the pipeline has to tell a model what collection it is searching, which it
+# needs before it can rewrite a question into the vocabulary the documents use.
+ABOUT = {
+    "aiact": "the EU Artificial Intelligence Act, its articles and annexes",
+    "peps": "Python Enhancement Proposals",
+}
