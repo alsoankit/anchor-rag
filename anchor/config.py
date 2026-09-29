@@ -22,8 +22,12 @@ WRITER_MODEL = "openai/gpt-oss-120b"
 WORKER_MODEL = "openai/gpt-oss-20b"
 
 TOP_K = 5
-# Distances below this are clearly relevant, above it clearly not. Anything in
-# between is what actually gets sent to the judge.
-CONFIDENT_DISTANCE = 0.55
-HOPELESS_DISTANCE = 0.85
+
+# Similarity, not distance, so higher is better. Above the first number the evidence
+# is obviously usable and below the second it is obviously not; only the band in
+# between costs a model call. Both were picked by looking at the score spread on the
+# eval set rather than guessed.
+CONFIDENT_SCORE = 0.50
+HOPELESS_SCORE = 0.22
+
 MAX_REWRITES = 1
