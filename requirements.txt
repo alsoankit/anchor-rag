@@ -1,0 +1,11 @@
+psycopg[binary]
+pgvector
+sentence-transformers
+groq
+fastapi
+uvicorn
+pydantic
+python-dotenv
+beautifulsoup4
+lxml
+httpx
