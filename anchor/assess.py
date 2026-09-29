@@ -47,10 +47,13 @@ class Report:
 
 
 def plan(description: str, about: str) -> list[str]:
-    result = structured(
-        PLAN_USER.format(about=about, description=description),
-        Plan, system=PLAN_SYSTEM, max_tokens=400,
-    )
+    try:
+        result = structured(
+            PLAN_USER.format(about=about, description=description),
+            Plan, system=PLAN_SYSTEM, max_tokens=400,
+        )
+    except ValueError:
+        return [description]
     return [s.strip() for s in result.searches if s.strip()][:5]
 
 

@@ -59,20 +59,31 @@ def enough_evidence(question: str, hits, trace: list[str]) -> bool:
         trace.append(f"gate: rejected on score alone ({best:.2f})")
         return False
 
-    verdict = structured(
-        JUDGE_USER.format(sources=format_sources(hits), question=question),
-        Verdict, system=JUDGE_SYSTEM, max_tokens=300,
-    )
+    try:
+        verdict = structured(
+            JUDGE_USER.format(sources=format_sources(hits), question=question),
+            Verdict, system=JUDGE_SYSTEM, max_tokens=300,
+        )
+    except ValueError:
+        # If the judge cannot be reached the score is all there is, so fall back to it
+        # rather than refusing outright. Refusing on an infrastructure problem would
+        # look identical to refusing on weak evidence, which makes the metric a lie.
+        trace.append(f"gate: judge unavailable, fell back to the score ({best:.2f})")
+        return best >= (CONFIDENT_SCORE + HOPELESS_SCORE) / 2
+
     trace.append(f"gate: score {best:.2f} was borderline, judge said "
                  f"{'yes' if verdict.can_answer else 'no'}")
     return verdict.can_answer
 
 
 def rewrite(question: str, corpus: str) -> str:
-    result = structured(
-        REWRITE_USER.format(about=ABOUT.get(corpus, corpus), question=question),
-        Rewritten, system=REWRITE_SYSTEM, max_tokens=200,
-    )
+    try:
+        result = structured(
+            REWRITE_USER.format(about=ABOUT.get(corpus, corpus), question=question),
+            Rewritten, system=REWRITE_SYSTEM, max_tokens=200,
+        )
+    except ValueError:
+        return question
     return result.question.strip() or question
 
 

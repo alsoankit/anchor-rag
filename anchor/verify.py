@@ -1,3 +1,4 @@
+import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
@@ -31,7 +32,14 @@ def format_sources(hits) -> str:
 
 
 def split_claims(answer: str) -> list[str]:
-    result = structured(CLAIMS_USER.format(answer=answer), Claims, system=CLAIMS_SYSTEM)
+    try:
+        result = structured(CLAIMS_USER.format(answer=answer), Claims, system=CLAIMS_SYSTEM)
+    except ValueError:
+        # Falling back to sentences is worse than what the model does, because pronouns
+        # stay unresolved and a sentence can carry two claims. But checking a rough split
+        # is much better than the whole verification step disappearing on one bad reply.
+        rough = re.split(r"(?<=[.!?])\s+", re.sub(r"\[\d+\]", "", answer))
+        return [s.strip() for s in rough if len(s.strip()) > 25]
     return [c.strip() for c in result.claims if c.strip()]
 
 

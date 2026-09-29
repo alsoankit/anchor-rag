@@ -3,7 +3,7 @@ import random
 import re
 import time
 
-from groq import Groq, RateLimitError
+from groq import BadRequestError, Groq, RateLimitError
 from pydantic import BaseModel, ValidationError
 
 from anchor.config import GROQ_API_KEY, WORKER_MODEL, WRITER_MODEL
@@ -86,7 +86,7 @@ def structured(prompt: str, schema: type[BaseModel], system: str = "",
     last_error = ""
     reply = ""
 
-    for attempt in range(attempts):
+    for attempt in range(attempts + 1):
         if attempt == 0:
             ask = f"{prompt}\n\nReply with JSON matching this schema:\n{hint}"
         else:
@@ -94,7 +94,18 @@ def structured(prompt: str, schema: type[BaseModel], system: str = "",
                    f"Reply was:\n{reply}\n\nThe problem:\n{last_error}\n\n"
                    f"Return corrected JSON matching:\n{hint}")
 
-        reply = chat(ask, system, model=model, json_mode=True, max_tokens=max_tokens)
+        # Groq validates JSON mode output on its side and returns a 400 when the model
+        # fails to produce any, so the first retry drops JSON mode entirely and lets
+        # _salvage pull the object out of whatever comes back. Reusing the mode that
+        # just failed tends to fail the same way.
+        try:
+            reply = chat(ask, system, model=model, json_mode=attempt == 0,
+                         max_tokens=max_tokens)
+        except BadRequestError as error:
+            last_error = f"the api rejected the generation: {str(error)[:200]}"
+            reply = ""
+            continue
+
         try:
             return schema.model_validate_json(_salvage(reply))
         except (ValidationError, json.JSONDecodeError, ValueError) as error:
