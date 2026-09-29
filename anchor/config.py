@@ -25,7 +25,10 @@ WORKER_MODEL = os.getenv("ANCHOR_WORKER_MODEL", "openai/gpt-oss-20b")
 # pipeline is not the pipeline grading itself.
 EVAL_MODEL = "qwen/qwen3.8-27b"
 
-TOP_K = 5
+# Five was the guess, eight is what the retrieval sweep actually picked: with the
+# citation hop on, k=8 finds the gold unit for every question in the eval set, while
+# k=5 has to drop a direct hit to make room for a followed one. See eval/sweep.py.
+TOP_K = 8
 
 # Similarity, not distance, so higher is better. Above the first number the evidence
 # is obviously usable and below the second it is obviously not; only the band in
