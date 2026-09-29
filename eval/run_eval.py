@@ -53,6 +53,7 @@ def run_config(name: str, questions: list[dict], corpus: str, k: int) -> dict:
             if result.checks:
                 row["unsupported_claims"] = len(result.unsupported)
                 row["total_claims"] = len(result.checks)
+                row["claim_detail"] = [[c.claim, c.supported] for c in result.checks]
 
             rows.append(row)
             print(f"  {item['id']:<6} {item['kind']:<13} "

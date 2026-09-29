@@ -180,7 +180,10 @@ class PEPs(Corpus):
 
         soup = BeautifulSoup(html, "lxml")
         number = source.split("-")[1]
-        heading = soup.select_one("h1")
+        # Not plain h1. The site banner is one too and it comes first, so every PEP
+        # ended up titled "Python Enhancement Proposals" until I looked at what was
+        # actually being stored.
+        heading = soup.select_one("h1.page-title")
         title = tidy(heading.get_text(" ", strip=True)) if heading else source
         label = f"PEP {number}"
 
