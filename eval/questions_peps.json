@@ -1,0 +1,92 @@
+[
+  {
+    "id": "p01",
+    "kind": "single",
+    "gold": [
+      "pep-8"
+    ],
+    "question": "How many spaces should be used per indentation level in Python code?"
+  },
+  {
+    "id": "p02",
+    "kind": "single",
+    "gold": [
+      "pep-257"
+    ],
+    "question": "Where should the closing quotes of a multi-line docstring go?"
+  },
+  {
+    "id": "p03",
+    "kind": "single",
+    "gold": [
+      "pep-1"
+    ],
+    "question": "What are the steps for submitting a new PEP?"
+  },
+  {
+    "id": "p04",
+    "kind": "single",
+    "gold": [
+      "pep-7"
+    ],
+    "question": "What indentation and brace style does C code in CPython use?"
+  },
+  {
+    "id": "p05",
+    "kind": "single",
+    "gold": [
+      "pep-394"
+    ],
+    "question": "What should the python command refer to on Unix-like systems?"
+  },
+  {
+    "id": "p06",
+    "kind": "single",
+    "gold": [
+      "pep-257"
+    ],
+    "question": "What conventions does the Python style guide defer to for writing documentation strings?"
+  },
+  {
+    "id": "p07",
+    "kind": "single",
+    "gold": [
+      "pep-12"
+    ],
+    "question": "What template should an author start from when writing a new PEP?"
+  },
+  {
+    "id": "p08",
+    "kind": "multihop",
+    "gold": [
+      "pep-20"
+    ],
+    "question": "What set of guiding principles does the style guide point to about consistency and readability?"
+  },
+  {
+    "id": "p12",
+    "kind": "multihop",
+    "gold": [
+      "pep-20"
+    ],
+    "question": "What should an author follow when a style rule would make the code less readable?"
+  },
+  {
+    "id": "p09",
+    "kind": "unanswerable",
+    "gold": [],
+    "question": "What is the maximum line length required by the Java coding style guide?"
+  },
+  {
+    "id": "p10",
+    "kind": "unanswerable",
+    "gold": [],
+    "question": "How do I install third party packages using conda?"
+  },
+  {
+    "id": "p11",
+    "kind": "unanswerable",
+    "gold": [],
+    "question": "What is the scheduled release date of Python 3.15?"
+  }
+]

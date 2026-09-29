@@ -1,13 +1,35 @@
 import json
+import random
+import re
+import time
 
-from groq import Groq
+from groq import Groq, RateLimitError
 from pydantic import BaseModel, ValidationError
 
 from anchor.config import GROQ_API_KEY, WORKER_MODEL, WRITER_MODEL
 
 client = Groq(api_key=GROQ_API_KEY)
 
-usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
+usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "waited": 0.0}
+
+MAX_TRIES = 6
+
+
+def _wait_for(error: RateLimitError, attempt: int) -> float:
+    """Groq says how long to wait in the error body, so use that rather than guessing.
+
+    Its per minute token budget is shared across every call the pipeline makes, so
+    during an eval run the limit is hit constantly. Falling back to plain doubling
+    without reading the message either sleeps far longer than needed or not long
+    enough, and a run of 150 questions turns into an afternoon either way.
+    """
+    match = re.search(r"try again in ([0-9.]+)(ms|s)", str(error))
+    if match:
+        seconds = float(match.group(1))
+        if match.group(2) == "ms":
+            seconds /= 1000
+        return seconds + 0.25
+    return min(2 ** attempt, 30) + random.random()
 
 
 def chat(prompt: str, system: str = "", model: str = WORKER_MODEL,
@@ -18,10 +40,20 @@ def chat(prompt: str, system: str = "", model: str = WORKER_MODEL,
     messages.append({"role": "user", "content": prompt})
 
     kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
-    response = client.chat.completions.create(
-        model=model, messages=messages, temperature=temperature,
-        max_tokens=max_tokens, **kwargs,
-    )
+
+    for attempt in range(MAX_TRIES):
+        try:
+            response = client.chat.completions.create(
+                model=model, messages=messages, temperature=temperature,
+                max_tokens=max_tokens, **kwargs,
+            )
+            break
+        except RateLimitError as error:
+            if attempt == MAX_TRIES - 1:
+                raise
+            pause = _wait_for(error, attempt)
+            usage["waited"] += pause
+            time.sleep(pause)
 
     usage["calls"] += 1
     if response.usage:
