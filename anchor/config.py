@@ -18,8 +18,8 @@ EMBED_DIM = 384
 # Two tiers. The big model writes answers, the small one does the mechanical jobs
 # (judging, splitting text into claims, rewriting a question) where speed and cost
 # matter more than eloquence.
-WRITER_MODEL = "openai/gpt-oss-120b"
-WORKER_MODEL = "openai/gpt-oss-20b"
+WRITER_MODEL = os.getenv("ANCHOR_WRITER_MODEL", "openai/gpt-oss-120b")
+WORKER_MODEL = os.getenv("ANCHOR_WORKER_MODEL", "openai/gpt-oss-20b")
 
 # Only used by the eval. It is a different model family on purpose, so that grading the
 # pipeline is not the pipeline grading itself.

@@ -1,4 +1,5 @@
 import json
+import os
 import random
 import re
 import time
@@ -13,6 +14,12 @@ client = Groq(api_key=GROQ_API_KEY)
 usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "waited": 0.0}
 
 MAX_TRIES = 6
+
+# Groq enforces a per minute budget and a rolling daily one. A minute of waiting is
+# normal during an eval and worth sitting through; anything longer means the daily
+# budget is gone and sleeping on it would just stall the run for an hour, so the
+# ceiling is deliberately short unless a caller says otherwise.
+PATIENCE = float(os.getenv("ANCHOR_MAX_WAIT", "90"))
 
 
 def _wait_for(error: RateLimitError, attempt: int) -> float:
@@ -52,6 +59,8 @@ def chat(prompt: str, system: str = "", model: str = WORKER_MODEL,
             if attempt == MAX_TRIES - 1:
                 raise
             pause = _wait_for(error, attempt)
+            if pause > PATIENCE:
+                raise
             usage["waited"] += pause
             time.sleep(pause)
 
