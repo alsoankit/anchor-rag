@@ -86,7 +86,11 @@ def ingest(corpus_name: str, strategy: str = "structural", limit: int | None = N
             size, overlap = (int(x) for x in strategy.split("-")[1:])
             units = fixed_size(units, size, overlap)
 
-        vectors = embed([u.text for u in units])
+        # The heading goes into the embedding but not into storage. A provision states
+        # its rule without ever restating what it is a rule about, so on its own text it
+        # only matches questions that happen to share its wording. Carrying the title
+        # gives every chunk the topic it was written under.
+        vectors = embed([f"{u.label}. {u.title}. {u.text}" for u in units])
         with conn.cursor() as cur:
             for unit, vector in zip(units, vectors):
                 cur.execute(

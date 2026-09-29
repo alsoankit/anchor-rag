@@ -110,9 +110,23 @@ class AIAct(Corpus):
             else:
                 groups.append((mark.rstrip("."), [body]))
 
+        # An unlabelled opening line ending in a colon is introducing the list below it,
+        # not saying anything itself. Left as its own chunk it wins searches it cannot
+        # answer, because it is the piece that repeats the words of the question while
+        # the actual provisions underneath are phrased in their own terms. Annex III is
+        # the clear case: its lead-in scored higher for a question about screening job
+        # applicants than the employment entry that answers it. So it rides on the front
+        # of each item instead, which also makes every item readable on its own.
+        lead = ""
+        if len(groups) > 1 and not groups[0][0] and groups[0][1][-1].rstrip().endswith(":"):
+            lead = " ".join(groups[0][1])
+            groups = groups[1:]
+
         units = []
         for part, lines in groups:
             text = " ".join(lines)
+            if lead:
+                text = f"{lead} {text}"
             units.append(Unit(
                 unit_id=source,
                 label=label,
