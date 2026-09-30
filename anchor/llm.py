@@ -12,39 +12,45 @@ from pydantic import BaseModel, ValidationError
 from anchor.config import GEMINI_API_KEY, GROQ_API_KEYS, WORKER_MODEL, WRITER_MODEL
 
 clients = [Groq(api_key=key) for key in GROQ_API_KEYS]
-_current = 0
-_switch = threading.Lock()
+
+# A daily budget is per account AND per model. Losing gpt-oss-120b on one account says
+# nothing about gpt-oss-20b on that same account, so exhaustion is recorded as a
+# (model, account) pair. The earlier version tracked a single current account for
+# everything, which meant the first model to run out dragged every other model off an
+# account that still had budget left.
+_spent: set[tuple[str, int]] = set()
+_turn: dict[str, int] = {}
+_keys = threading.Lock()
 
 
-def client() -> Groq:
-    return clients[_current]
+def _pick(model: str) -> int:
+    """Round robin over the accounts that still have budget for this model.
 
-
-def _rotate(exhausted: int) -> bool:
-    """Move to the next account when this one has spent its day.
-
-    The per minute limit is something you wait out. The daily one is not — once it is
-    gone it is gone for hours, and an eval half finished on one model is worth less than
-    no eval at all, because you cannot tell a configuration difference from a model
-    difference. So the keys are a list and the budget is the sum of them.
-
-    Claim checks run four at a time, so four threads can hit the wall on the same key at
-    the same moment. Each passes in the key it was using, and a rotation only happens if
-    nobody has already moved past it — otherwise the first thread to notice would rotate
-    once per thread and walk straight off the end of the list.
+    Spreading calls rather than draining one account at a time is what makes several
+    keys worth having. Each account gets its own tokens-per-minute allowance, so three
+    accounts in rotation is three times the throughput, not merely three times the total
+    budget. Draining them in order would have given the second thing without the first.
     """
-    global _current
-    with _switch:
-        if exhausted < _current:
-            return True
-        if _current + 1 >= len(clients):
-            return False
-        _current += 1
-        usage["rotations"] += 1
-        return True
+    with _keys:
+        live = [i for i in range(len(clients)) if (model, i) not in _spent]
+        if not live:
+            raise RuntimeError(f"every account has spent its daily budget for {model}")
+        turn = _turn.get(model, 0)
+        _turn[model] = turn + 1
+        return live[turn % len(live)]
+
+
+def _retire(model: str, index: int) -> bool:
+    """Take one account out of rotation for one model. True if others remain."""
+    with _keys:
+        if (model, index) not in _spent:
+            _spent.add((model, index))
+            usage["retired"].append(f"{model} on key {index + 1}")
+        return any((model, i) not in _spent for i in range(len(clients)))
+
 
 usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "waited": 0.0,
-         "rotations": 0}
+         "retired": [], "per_key": [0] * max(len(GROQ_API_KEYS), 1)}
 
 MAX_TRIES = 6
 
@@ -154,22 +160,32 @@ def chat(prompt: str, system: str = "", model: str = WORKER_MODEL,
     kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
 
     for attempt in range(MAX_TRIES):
-        using = _current
+        index = _pick(model)
         try:
-            response = client().chat.completions.create(
+            response = clients[index].chat.completions.create(
                 model=model, messages=messages, temperature=temperature,
                 max_tokens=max_tokens, **kwargs,
             )
+            usage["per_key"][index] += 1
             break
         except RateLimitError as error:
             pause = _wait_for(error, attempt)
-            daily = "per day" in str(error) or pause > PATIENCE
-            if daily:
-                if _rotate(using):
+
+            if "per day" in str(error) or pause > PATIENCE:
+                if _retire(model, index):
                     continue
                 raise
+
             if attempt == MAX_TRIES - 1:
                 raise
+
+            # A per minute limit belongs to one account. With others in rotation the
+            # next attempt lands on a different one, so there is no reason to sit out
+            # the full delay the server suggested; a short pause is only there to stop
+            # a hot loop.
+            with _keys:
+                spare = sum(1 for i in range(len(clients)) if (model, i) not in _spent) > 1
+            pause = min(pause, 1.0) if spare else pause
             usage["waited"] += pause
             time.sleep(pause)
 
