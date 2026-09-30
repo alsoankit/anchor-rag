@@ -1,78 +1,128 @@
 # Anchor
 
-Anchor is a question answering engine that stays inside its evidence. You point it at a set
-of documents, ask it something, and it either answers with a citation for every claim it
-makes or it tells you it doesn't have enough to go on. It is corpus agnostic: the same
-engine runs over EU regulation and over Python PEPs, and the only thing that changes between
-them is a small adapter class.
+**A retrieval engine that refuses to answer beyond its evidence.**
 
-The short version of what it does: **retrieval decides what the model is allowed to see, and
-the verification layer decides what it is allowed to say.**
+Point it at a set of documents. Ask a question. It answers using only the retrieved text, puts
+a citation on every claim, verifies each claim against its source before returning it, and says
+so plainly when the documents don't cover your question.
 
-## Why I built it this way
+Retrieval decides what the model is allowed to *see*. Verification decides what it is allowed
+to *say*.
 
-The first version of any RAG project is easy. Embed some chunks, search by cosine
-similarity, paste the top five into a prompt, print whatever comes back. That works often
-enough to demo and it fails in ways that are hard to see, which is worse than failing
-loudly.
+```
+$ anchor ask "Is an AI system used to evaluate job applicants considered high risk?"
 
-Three failures kept showing up while I tested a plain pipeline, and each one pushed a piece
-of this design.
+Yes. An AI system that is used to evaluate job applicants falls within the high-risk
+category for employment, recruitment and selection of natural persons [1]
+
+checked 1 statements, 0 not supported
+
+sources
+  [1] Annex III(4)   score 0.74
+      High-risk AI systems pursuant to Article 6(2) are the AI systems listed in any of
+      the following areas: Employment, workers' management and access to self-employment:
+      (a) AI systems intended to be used for the recruitment or selection of natural...
+  [5] Article 3(65)  score 0.55 (followed from Annex III(4))
+
+what it did
+  retrieved 5 chunks, best score 0.74
+  followed citations into Article 3(65)
+  gate: passed on score alone (0.74)
+  checked 1 statements, 0 unsupported
+```
+
+And when the corpus can't answer it:
+
+```
+$ anchor ask "What is the maximum fine under the GDPR for unlawful profiling?"
+
+I don't have enough in the sources to answer that.
+reason: the sources were retrieved but do not answer it
+
+what it did
+  retrieved 5 chunks, best score 0.55
+  gate: passed on score alone (0.55)
+  the writer refused after reading the sources
+```
+
+---
+
+## Why it exists
+
+The first version of any RAG project is easy. Embed some chunks, search by cosine similarity,
+paste the top five into a prompt, print whatever comes back. That works often enough to demo,
+and it fails in ways you cannot see — which is worse than failing loudly.
+
+Three failures kept showing up while testing a plain pipeline. Each one became a piece of this
+design.
 
 **The model answers from memory instead of from the documents.** Ask about something it saw
-during pretraining and it produces a fluent, confident, sometimes correct answer that has
-nothing to do with what retrieval returned. You can't tell by reading the output. That is
-why every claim gets checked against the retrieved text before the answer is returned,
-rather than trusting the citation markers the model wrote itself.
+during pretraining and it produces a fluent, confident, sometimes correct answer with no
+relationship to what retrieval returned. You cannot tell by reading the output. So every claim
+gets checked against the retrieved text, rather than trusting citation markers the model wrote
+itself.
 
-**Similarity search can't follow a reference.** Real documents point at each other
-constantly. An article of the EU AI Act says a system is high risk if it is listed in Annex
-III, and the text you actually need sits in a different document that shares almost no
-vocabulary with the question. Cosine similarity will never surface it. So Anchor builds a
-citation graph over the corpus during ingest and follows those edges after the first search.
+**Similarity search cannot follow a reference.** Documents cite each other constantly. An
+article of the EU AI Act says a system is high risk if it is listed in Annex III, and the text
+you need sits in a different document sharing almost no vocabulary with the question. Cosine
+similarity will never surface it. So ingest builds a citation graph and retrieval walks it.
 
-**A plain pipeline has no way to say no.** If retrieval comes back with garbage, the prompt
-still gets filled and the model still writes something. Anchor scores the evidence before
-generating, refuses when it is too weak, and rewrites the question once before giving up.
+**A plain pipeline has no way to say no.** If retrieval returns garbage the prompt still gets
+filled and the model still writes something. So the evidence is scored before generating, and
+the question is rewritten once before the system gives up.
+
+---
 
 ## How it works
 
-Ingest pulls a corpus through an adapter, splits it into units that respect the document's
-own structure, embeds them, and stores them in Postgres with pgvector. While parsing it also
-records which unit cites which, which gives the citation graph for free.
+```mermaid
+flowchart TD
+    A[Question] --> B[Embed and search<br/>cosine over pgvector]
+    B --> C[Follow citations<br/>one hop along graph edges]
+    C --> D{Evidence<br/>strong enough?}
+    D -- borderline --> E[LLM judge]
+    E --> D
+    D -- no --> F[Rewrite the question]
+    F --> B
+    F -- already retried --> G[Refuse]
+    D -- yes --> H[Generate<br/>sources only, cite every sentence]
+    H --> I[Split into claims]
+    I --> J[Check each claim<br/>against its sources alone]
+    J --> K[Answer + citations<br/>unsupported claims flagged]
+```
 
-A question is embedded and searched against that store. The top results are expanded one hop
-along citation edges. Followed text does not compete on similarity — it can't, since it
-inherits a faded copy of its parent's score and so can never outrank it — so a couple of
-context slots are reserved for it instead. Total context size stays the same either way,
-which is what makes the comparison below mean something.
+**Ingest** splits a corpus into units that follow the document's own structure — a numbered
+paragraph of an article, not a fixed 1000 characters — embeds them into Postgres with pgvector,
+and records which unit cites which. The citation graph comes free with the parse.
 
-Before anything is generated the evidence is scored. A cheap distance check handles the
-obvious cases and only borderline ones cost a model call. If the evidence fails, the engine
-rewrites the question and tries once more; if it fails again it refuses.
+**Retrieval** searches by cosine distance, then pulls in what the strongest hits reference.
+Followed text cannot win on similarity — it inherits a decayed copy of its parent's score, so
+by construction it never outranks its parent. Reserved context slots solve that, and total
+context size stays constant either way, which is what makes the comparison below meaningful.
 
-If the evidence holds, the answer is generated under a prompt that only permits what it was
-given. That answer is then split into individual claims and each one is checked back against
-the sources on its own. Claims that aren't supported get flagged rather than shipped.
+**The gate** runs a cheap distance check first; only borderline cases cost a model call. On
+failure the model rewrites its own question and retrieval runs again, capped at one retry.
 
-There is a second mode. Describe a system in plain English and `assess` breaks the
-description into several searches, retrieves for each, and returns the obligations that
-apply to it with a citation on each one.
+**Verification** decomposes the answer into atomic claims and puts each one back in front of
+the sources alone, without the rest of the answer around it making it sound plausible.
 
-## What the numbers say
+---
 
-Two corpora. The EU AI Act: 739 chunks, 126 units, 402 citation edges, with 30 hand-written
-questions whose gold labels were each verified against the actual text. Python PEPs: 635
-chunks, 60 units, 235 edges, 11 questions. Questions come in three kinds: answerable from one
-unit, needing a reference followed, and genuinely unanswerable.
+## Results
+
+Two corpora, to show the engine isn't tied to one dataset. The EU AI Act (739 chunks, 126
+units, 402 citation edges) and Python PEPs (635 chunks, 60 units, 235 edges). Only an adapter
+class differs between them.
+
+Questions come in three kinds: answerable from one unit, needing a reference followed, and
+genuinely unanswerable. Every gold label was verified against the actual document text.
 
 ### Retrieval
 
-This sweep costs nothing to run, because it is embeddings and SQL with no model calls at
-all. Splitting it out from the expensive evaluation is what let it explore widely.
+Free to run — embeddings and SQL, no model calls.
 
-| chunking | k | hop | single | multihop | overall |
-|---|---|---|---|---|---|
+| chunking | k | hop | single-hop | multi-hop | overall |
+|---|:-:|:-:|:-:|:-:|:-:|
 | structural | 5 | no | 1.00 | 0.70 | 0.86 |
 | structural | 5 | yes | 0.92 | 1.00 | 0.95 |
 | **structural** | **8** | **yes** | **1.00** | **1.00** | **1.00** |
@@ -80,27 +130,25 @@ all. Splitting it out from the expensive evaluation is what let it explore widel
 | structural | 3 | yes | 0.92 | 1.00 | 0.95 |
 | fixed-size | 5 | no | 0.92 | 0.80 | 0.86 |
 
-Following citations takes multi-hop retrieval from **0.70 to 1.00** on the AI Act and from
-**0.00 to 1.00** on the PEPs. The three AI Act questions it rescues are all the same shape:
-plain retrieval found the article that *points at* the answer and stopped there. Asked which
-criminal offences permit real-time biometric identification, it returned Article 5 three
-times over; the list of offences is in Annex II.
+Following citations takes multi-hop retrieval from **0.70 to 1.00** on the AI Act, and from
+**0.00 to 1.00** on the PEPs. The three AI Act questions it rescues are the same shape every
+time: plain retrieval found the article that *points at* the answer and stopped. Asked which
+criminal offences permit real-time biometric identification, it returned Article 5 three times
+over — the list of offences is in Annex II.
 
-It is not free. At k=5 a reserved slot pushes a direct hit out and single-hop drops to 0.92.
-At k=8 there is room for both and everything reaches 1.00, which is why k=8 is the default —
-that came from the table, not from a guess.
+It is not free. At k=5 a reserved slot displaces a direct hit and single-hop drops to 0.92. At
+k=8 there is room for both. `k=8` is the default because of this table, not because it was
+guessed.
 
-The line I find most useful: **k=3 with the hop beats k=8 without it**, 0.95 against 0.86, on
-under half the context. Following one reference is worth more than five extra chunks of
-similar text.
+> **k=3 with the hop beats k=8 without it** — 0.95 against 0.86, on under half the context.
+> Following one reference is worth more than five extra chunks of similar text.
 
 ### Generation
 
-Every row below uses the same writer model, the same metric and k=5, so they are comparable
-to each other.
+Same writer model, same metric, k=5 throughout.
 
-| config | hit single | hit multihop | good refusals | bad refusals | faithful | tokens/question |
-|---|---|---|---|---|---|---|
+| config | single | multi-hop | correct refusals | false refusals | faithful | tokens/q |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
 | naive | 1.00 | 0.70 | 0.625 | 0.045 | 0.975 | 2,500 |
 | plain | 1.00 | 0.70 | 1.00 | 0.136 | 1.00 | 1,914 |
 | fixed-size | 0.92 | 0.80 | 1.00 | 0.045 | 0.943 | 2,737 |
@@ -108,132 +156,142 @@ to each other.
 | hop+gate | 0.92 | 1.00 | 1.00 | 0.091 | 0.944 | 2,208 |
 | full | 0.92 | 1.00 | 1.00 | 0.091 | 0.958 | 6,823 |
 
-`naive` has no instruction to stay inside the sources and no way to refuse. It is what a
-pipeline looks like when retrieval is treated as the whole job.
+`naive` has no instruction to stay inside the sources and no way to refuse — a pipeline where
+retrieval is treated as the whole job. **The grounding instruction takes correct refusals from
+0.625 to 1.00**, answering three of eight unanswerable questions otherwise. The cost, stated in
+the same breath: false refusals rise from 0.045 to 0.136.
 
-**The grounding instruction takes correct refusals from 0.625 to 1.00.** The naive prompt
-answers three of the eight unanswerable questions anyway. The cost, in the same breath: false
-refusals rise from 0.045 to 0.136, so the instruction makes the system more cautious than it
-needs to be on two answerable questions. That is a trade, and it belongs in the table rather
-than buried.
-
-Worth noticing that the hop *reduces* false refusals, 0.136 down to 0.091. Better evidence
-means fewer questions the model can't find enough to answer.
+The hop *reduces* false refusals, 0.136 to 0.091. Better evidence means fewer questions the
+model can't find enough to answer.
 
 ### The result I did not expect
 
-The `full` config decomposed 20 answers into 67 individual claims and found **12 of them
-unsupported by the retrieved text — 18%.** On the PEPs it was 5 of 22, **23%**. Two unrelated
-corpora landing in the same range.
+The full config decomposed 20 answers into 67 claims and found **12 unsupported by the
+retrieved text — 18%.** On the PEPs, 5 of 22 — **23%**. Two unrelated corpora in the same range.
 
-That is with the grounding prompt and the refusal gate both active. And the answer-level
-faithfulness judge scores those same answers at 0.958.
+That is with the grounding prompt and the refusal gate both active, and an answer-level
+faithfulness judge scoring those same answers at 0.958.
 
-Those two measurements disagree, and that disagreement is the point. A judge reading a whole
-answer sees something mostly grounded and scores it as grounded. Decomposing it catches the
-one sentence in five that quietly drifted past what the sources actually say. **Grounding
-prompts and refusal gates are not sufficient on their own**, which is a narrower and more
-useful claim than "this system prevents hallucination".
-
-Verification costs what you would expect: 6,823 tokens per question against 2,208 without it,
-roughly 3.1x, because every claim is its own call. That is the right trade for a compliance
-question and the wrong one for a chatbot.
+Those two measurements disagree, and the disagreement is the point. A judge reading a whole
+answer sees something mostly grounded and calls it grounded. Decomposing it catches the one
+sentence in five that drifted past what the sources say. **Grounding prompts and refusal gates
+are not sufficient on their own** — a narrower claim than "this prevents hallucination", and
+one that can actually be defended.
 
 ### How much to trust the faithfulness numbers
 
 There are no human labels anywhere in this evaluation. Faithfulness is one model's opinion of
-another model's output. What `eval/calibrate.py` measures is whether three judges from
-different families agree on the same statements: the pipeline's own checker, a second
-open-weight model, and a Gemini model from a different provider entirely. That third one
-matters most, because the first two are served through the same API and their agreeing could
-be an artefact of shared lineage rather than the statements being clear-cut.
+another model's output. What `eval/calibrate.py` measures is whether independent judges agree:
 
 | comparison | claims | agreement |
-|---|---|---|
-| pipeline checker vs second judge (both Groq, different families) | 58 | 78% |
+|---|:-:|:-:|
+| pipeline checker vs second judge | 58 | 78% |
 | pipeline checker vs third judge (different provider) | 20 | 80% |
-| second judge vs third judge | 20 | 90% |
+| second vs third judge | 20 | 90% |
 | all three agreed | 20 | 70% |
 
-The third judge grades a sample rather than everything, because its free tier allows twenty
-requests a day. Two numbers, two sample sizes, reported separately rather than blended into
-one figure that implies more coverage than exists.
+Around 78–80% is a reasonable place to land: stable enough that a difference between two
+configurations means something, not so stable that any single number should be quoted as fact.
+**Agreement is not accuracy.** Three models agreeing means they read the evidence the same way,
+not that they read it correctly.
 
-Around 78 to 80 percent is a reasonable place to land. It says the faithfulness signal is
-stable enough that a difference between two configurations means something, and not so
-stable that any single number should be quoted as fact. Agreement is not accuracy: three
-models agreeing says they read the evidence the same way, not that they read it correctly.
+The disagreements are readable. Most are the pipeline's checker being stricter than the others
+on claims that paraphrase a provision rather than restate it — it wants the words present, the
+others accept the sense. For a compliance system that is arguably the right bias, but it is a
+bias, and it means the 18% figure should be read as an upper bound.
 
-Where they disagree is itself readable. Most of the splits are the pipeline's checker being
-stricter than the others on claims that paraphrase a provision rather than restate it — it
-wants the words to be there, the others accept the sense. For a compliance system that is
-arguably the right bias, but it is a bias, and it is why the unsupported-claim rate above
-should be read as an upper bound.
+---
 
 ## Running it
 
-```
+```bash
 docker compose up -d
 pip install -r requirements.txt
-cp .env.example .env          # add a Groq key; several are supported
+cp .env.example .env              # add a Groq key. Several are supported.
+
 python -m anchor.cli ingest aiact
-python -m anchor.cli ask "Is an AI system used to screen job applicants high risk?"
-python -m eval.sweep --corpus aiact          # free, no model calls
-python -m eval.run_eval --corpus aiact
+python -m anchor.cli ask "Which AI practices does the Regulation prohibit?"
 ```
 
-`anchor.cli retrieve` shows what came back and what was followed, without generating.
-`anchor.cli assess` takes a system description. `anchor.api` exposes both over FastAPI.
+| command | what it does |
+|---|---|
+| `anchor.cli ask` | answer a question, with citations and the trace of what it did |
+| `anchor.cli retrieve` | show what came back and what was followed, without generating |
+| `anchor.cli assess` | describe a system in plain English, get the obligations that apply |
+| `anchor.cli ingest` | pull a corpus through its adapter and build the citation graph |
+| `eval.sweep` | retrieval parameter sweep — free, no model calls |
+| `eval.run_eval` | the full ablation across pipeline configurations |
+| `eval.calibrate` | how much the faithfulness judge can be trusted |
+
+`anchor.api` exposes `/ask` and `/assess` over FastAPI.
+
+**Adding a corpus** means one adapter class answering three questions: where the documents
+live, how one splits into units, and what a reference to another unit looks like in the text.
+Everything downstream is corpus-blind.
+
+---
+
+## Built with
+
+Python · FastAPI · PostgreSQL + pgvector (HNSW, cosine) · sentence-transformers
+(`all-MiniLM-L6-v2`, 384 dims) · Groq (`gpt-oss-120b` writes, `gpt-oss-20b` judges) · Gemini
+(independent evaluation judge only) · Docker
+
+About 1,800 lines. No LangChain or LlamaIndex — deliberately. Every retrieval decision, prompt
+and threshold is visible and changeable, which is the point.
+
+---
 
 ## What it doesn't do
 
-- **One hop only.** If the answer is two references away it isn't found. Multi-hop traversal
-  wasn't worth the retrieval noise at this corpus size.
+- **One hop only.** If the answer is two references away, it isn't found.
 - **No reranker.** A cross-encoder over the retrieved set is the obvious next improvement and
   would probably beat the hop on single-hop questions.
-- **Recitals of the AI Act are excluded.** They explain the reasoning behind the law but are
-  not the law, and they roughly triple the corpus with text that sounds authoritative without
-  being binding.
-- **The eval set is 30 questions written by one person.** Enough to compare configurations
-  against each other, not enough to say anything about absolute quality. At k=8 with the hop
-  it is saturated at 1.00 and can no longer distinguish improvements; the next version needs
-  harder questions, not more mechanisms.
-- **`all-MiniLM-L6-v2` is small and old.** Chosen because it is free, local, and fast enough
-  to re-embed the whole corpus in under a minute while iterating.
-- **The third calibration judge samples 20 of 67 claims**, because its free tier allows
-  twenty requests per day. The two-judge comparison covers everything; the cross-provider
-  check does not.
+- **Recitals of the AI Act are excluded.** They explain the reasoning behind the law but are not
+  the law, and they triple the corpus with text that sounds authoritative without being binding.
+- **30 questions, written by one person.** Enough to compare configurations against each other,
+  not enough to claim anything about absolute quality. At k=8 with the hop the set is saturated
+  at 1.00 and can no longer distinguish improvements — the next version needs harder questions,
+  not more mechanisms.
+- **`all-MiniLM-L6-v2` is small and old.** Chosen because it is free, local, and fast enough to
+  re-embed the whole corpus in under a minute while iterating.
+- **The third calibration judge samples 20 of 67 claims**, because its free tier allows twenty
+  requests a day.
 
-## Notes on things that broke
+---
 
-A silent regex bug cost a fifth of the citation graph: `\bAnnexes?` doesn't mean "Annex" with
-an optional "s" — the `?` binds to the preceding character, so it only ever matched "Annexe"
-and "Annexes", never the singular that appears everywhere.
+## What broke
 
-The citation hop did nothing for its first implementation. Followed chunks inherit a decayed
-copy of their parent's score, so sorting the merged set by score threw away everything the
-hop had found. Output was byte-identical with the feature on and off.
+The most useful part of this project. None of these threw an error.
 
-The classic RAG failure showed up in miniature: asked whether CV screening is high risk,
-retrieval returned Annex III's *header* at 0.588 and the employment provision that answers it
-at 0.531. The header repeats the question's vocabulary; the answer doesn't. Folding list
-lead-ins into their items and putting unit headings into the embedding moved it to 0.74 and
-rank one.
+**A regex ate a fifth of the citation graph.** `\bAnnexes?` does not mean "Annex" with an
+optional "s" — `?` binds to the preceding character, so it matched "Annexe" and "Annexes" and
+never the singular that appears everywhere. No crash, just a graph quietly missing every
+single-annex reference.
 
-The calibration had a bug that produced a confident, plausible, completely wrong result. It
-reconstructed "the sources" a judge should grade against by taking one chunk per retrieved
-unit, with no ordering. Article 99 has nineteen paragraphs; the answer had been written from
-the one containing the fine, and the reconstruction handed over the first. Every judge but
-the pipeline's own was grading against evidence that did not contain the answer. They said
-unsupported, agreed with each other at 94%, and agreement between two measurements looked
-like confirmation when it was a shared input. Agreement across configurations that were
-reading the same wrong thing is not evidence of anything. The eval now records exact chunk
-ids and rebuilds from those, and the agreement numbers went from 28% to 78%.
+**The citation hop did nothing for its first implementation.** Followed chunks inherit a decayed
+copy of their parent's score, so sorting the merged set by score threw away everything the hop
+had found. Output was byte-identical with the feature on and off.
 
-And the evaluation itself had a bug worth more than any of them. Refusal was detected by
-checking the answer for the string `NOT IN SOURCES` — the exact phrase the grounding prompt
-tells the model to emit. That worked until the naive baseline was added, which has no such
-instruction and declined in its own words instead. The metric was measuring a prompt's
-vocabulary rather than the behaviour it was named after, and the two only lined up by
-accident. It agreed with my expectations for four configurations before the fifth exposed it.
-Every number measured before the fix was thrown away and re-run.
+**The chunk that talked about the topic beat the chunk that answered it.** Asked whether CV
+screening is high risk, retrieval returned Annex III's *header* at 0.588 and the employment
+provision that answers it at 0.531. The header repeats the question's vocabulary; the answer
+doesn't. Folding list lead-ins into their items and putting unit headings into the embedding
+moved it to 0.74 and rank one.
+
+**A metric measured a prompt's vocabulary instead of behaviour.** Refusal was detected by
+checking for the string `NOT IN SOURCES` — the exact phrase the grounding prompt tells the model
+to emit. That worked until a baseline with no such instruction was added, which declined in its
+own words and was scored as having answered. The metric agreed with expectations across four
+configurations before the fifth exposed it. Every earlier number was thrown away and re-measured.
+
+**And the calibration produced a confident, plausible, completely wrong result.** It rebuilt
+"the sources" a judge should grade against by taking one chunk per retrieved unit, with no
+ordering. Article 99 has nineteen paragraphs; the answer had been written from the one containing
+the fine, and the reconstruction handed over the first. Every judge but the pipeline's own was
+grading against evidence that did not contain the answer. They said unsupported, agreed with
+each other at 94%, and that agreement looked like confirmation.
+
+> Two measurements agreeing is not evidence they are correct. It is evidence they share an input.
+
+The eval now records exact chunk ids and rebuilds from those. Agreement went from 28% to 78%.
