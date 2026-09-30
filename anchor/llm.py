@@ -11,7 +11,11 @@ from pydantic import BaseModel, ValidationError
 
 from anchor.config import GEMINI_API_KEY, GROQ_API_KEYS, WORKER_MODEL, WRITER_MODEL
 
-clients = [Groq(api_key=key) for key in GROQ_API_KEYS]
+# An explicit timeout, because the default is generous enough that a request which never
+# comes back sits there indefinitely. One did, during calibration, and took half an hour
+# of a run with it. One retry rather than none, so a dropped connection still recovers,
+# but the worst case stays bounded at roughly three minutes instead of forever.
+clients = [Groq(api_key=key, timeout=90.0, max_retries=1) for key in GROQ_API_KEYS]
 
 # A daily budget is per account AND per model. Losing gpt-oss-120b on one account says
 # nothing about gpt-oss-20b on that same account, so exhaustion is recorded as a

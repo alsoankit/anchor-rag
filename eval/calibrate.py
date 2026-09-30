@@ -16,6 +16,7 @@ difference between two configurations means something rather than noise.
 """
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -47,7 +48,7 @@ def judge(claim: str, sources: str, model: str) -> bool | None:
     try:
         result = structured(CHECK_USER.format(sources=sources, claim=claim),
                             Support, system=CHECK_SYSTEM, max_tokens=400, model=model)
-    except (ValueError, Exception):
+    except Exception:
         return None
     return result.supported
 
@@ -56,21 +57,35 @@ def main():
     run = json.loads((HERE / "results" / "aiact-full.json").read_text())
     conn = connect()
 
-    verdicts = []
+    # Every claim, paired with the sources its answer was generated from.
+    jobs = []
     for row in run["rows"]:
         if row["refused"] or not row.get("claim_detail"):
             continue
-
-        hits = rebuild_hits(row["retrieved"], conn)
-        sources = format_sources(hits)
-
+        sources = format_sources(rebuild_hits(row["retrieved"], conn))
         for claim, pipeline_said in row["claim_detail"]:
-            second = judge(claim, sources, EVAL_MODEL)
-            third = judge(claim, sources, THIRD_MODEL)
-            if second is None or third is None:
-                continue
-            verdicts.append({"question": row["question"], "claim": claim,
-                             "pipeline": pipeline_said, "second": second, "third": third})
+            jobs.append((row["question"], claim, pipeline_said, sources))
+
+    # Judged in parallel. The first version walked the list one call at a time, twice
+    # over, and a single request that never came back stalled the whole thing for half
+    # an hour with nothing to show for it. verify.py already had a thread pool for
+    # exactly this shape of work; this should have had one from the start.
+    def ask(job):
+        _, claim, _, sources = job
+        with ThreadPoolExecutor(max_workers=2) as pair:
+            second = pair.submit(judge, claim, sources, EVAL_MODEL)
+            third = pair.submit(judge, claim, sources, THIRD_MODEL)
+            return second.result(), third.result()
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        answers = list(pool.map(ask, jobs))
+
+    verdicts = []
+    for (question, claim, pipeline_said, _), (second, third) in zip(jobs, answers):
+        if second is None or third is None:
+            continue
+        verdicts.append({"question": question, "claim": claim,
+                         "pipeline": pipeline_said, "second": second, "third": third})
 
     conn.close()
 
