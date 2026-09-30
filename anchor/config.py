@@ -36,7 +36,12 @@ EVAL_MODEL = "qwen/qwen3.8-27b"
 # A third opinion for the calibration, and the one that carries the most weight because it
 # is the only judge that is not an open-weight model served by the same provider as the
 # pipeline. If all three agree, the agreement is not an artefact of a shared lineage.
-THIRD_MODEL = "gemini-3.8-flash"
+#
+# The free tier allows twenty requests per day per model, which is nowhere near enough to
+# judge every claim. So this one grades a sample and the two Groq judges grade everything,
+# and the write-up reports those as two separate numbers rather than pretending otherwise.
+THIRD_SAMPLE = 18
+THIRD_MODEL = "gemini-flash-lite-latest"
 
 # Five was the guess, eight is what the retrieval sweep actually picked: with the
 # citation hop on, k=8 finds the gold unit for every question in the eval set, while

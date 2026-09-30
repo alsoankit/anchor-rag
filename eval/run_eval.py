@@ -50,6 +50,10 @@ def run_config(name: str, questions: list[dict], corpus: str, k: int) -> dict:
                 "refused_by_pipeline": result.refused,
                 "answer": result.text,
                 "retrieved": [h.unit_id for h in result.hits],
+                # The exact chunks, because a unit can hold twenty paragraphs and only one
+                # of them is the evidence. Recording the unit alone made it impossible to
+                # reconstruct afterwards what the model had actually been shown.
+                "chunk_ids": [h.chunk_id for h in result.hits],
                 "followed": [h.citation for h in result.hits if h.followed],
                 "hit": retrieval_hit(result.hits, item.get("gold", [])),
                 "recall": gold_recall(result.hits, item.get("gold", [])),

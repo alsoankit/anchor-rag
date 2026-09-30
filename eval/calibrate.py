@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from anchor.config import EVAL_MODEL, THIRD_MODEL, WORKER_MODEL
+from anchor.config import EVAL_MODEL, THIRD_MODEL, THIRD_SAMPLE, WORKER_MODEL
 from anchor.llm import structured
 from anchor.prompts import CHECK_SYSTEM, CHECK_USER
 from anchor.store import connect
@@ -31,13 +31,21 @@ from anchor.retrieve import Hit
 HERE = Path(__file__).resolve().parent
 
 
-def rebuild_hits(unit_ids: list[str], conn) -> list[Hit]:
+def rebuild_hits(chunk_ids: list[int], conn) -> list[Hit]:
+    """The exact chunks the answer was generated from, by id.
+
+    This used to look up one chunk per unit with no ordering, which quietly handed the
+    judges a different paragraph from the one the model had read. Article 99 has nineteen
+    chunks; the reconstruction picked the first and the answer had been written from the
+    one with the fine in it, so every judge but the pipeline's own was grading against
+    evidence that did not contain the answer. They all said unsupported, agreed with each
+    other, and the agreement looked like a finding.
+    """
     hits = []
-    for unit_id in unit_ids:
+    for chunk_id in chunk_ids:
         row = conn.execute(
-            """select id, unit_id, citation, title, text, url from chunks
-               where corpus='aiact' and strategy='structural' and unit_id=%s limit 1""",
-            (unit_id,)).fetchone()
+            """select id, unit_id, citation, title, text, url from chunks where id = %s""",
+            (chunk_id,)).fetchone()
         if row:
             hits.append(Hit(chunk_id=row[0], unit_id=row[1], citation=row[2],
                             title=row[3], text=row[4], url=row[5], score=0.0))
@@ -57,66 +65,76 @@ def main():
     run = json.loads((HERE / "results" / "aiact-full.json").read_text())
     conn = connect()
 
-    # Every claim, paired with the sources its answer was generated from.
     jobs = []
     for row in run["rows"]:
-        if row["refused"] or not row.get("claim_detail"):
+        if row["refused"] or not row.get("claim_detail") or not row.get("chunk_ids"):
             continue
-        sources = format_sources(rebuild_hits(row["retrieved"], conn))
+        sources = format_sources(rebuild_hits(row["chunk_ids"], conn))
         for claim, pipeline_said in row["claim_detail"]:
-            jobs.append((row["question"], claim, pipeline_said, sources))
-
-    # Judged in parallel. The first version walked the list one call at a time, twice
-    # over, and a single request that never came back stalled the whole thing for half
-    # an hour with nothing to show for it. verify.py already had a thread pool for
-    # exactly this shape of work; this should have had one from the start.
-    def ask(job):
-        _, claim, _, sources = job
-        with ThreadPoolExecutor(max_workers=2) as pair:
-            second = pair.submit(judge, claim, sources, EVAL_MODEL)
-            third = pair.submit(judge, claim, sources, THIRD_MODEL)
-            return second.result(), third.result()
-
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        answers = list(pool.map(ask, jobs))
-
-    verdicts = []
-    for (question, claim, pipeline_said, _), (second, third) in zip(jobs, answers):
-        if second is None or third is None:
-            continue
-        verdicts.append({"question": question, "claim": claim,
-                         "pipeline": pipeline_said, "second": second, "third": third})
-
+            jobs.append({"question": row["question"], "claim": claim,
+                         "pipeline": pipeline_said, "sources": sources})
     conn.close()
 
-    if not verdicts:
+    if not jobs:
         print("nothing to compare — run the full config first")
         return
 
-    def agreement(a: str, b: str) -> float:
-        return sum(1 for v in verdicts if v[a] == v[b]) / len(verdicts)
+    # The third judge is on a free tier that allows twenty calls a day, so it grades an
+    # evenly spaced sample rather than everything. Spacing it rather than taking the first
+    # N keeps the sample spread across questions instead of concentrated in the first two.
+    step = max(len(jobs) // THIRD_SAMPLE, 1)
+    sampled = {i for i in range(0, len(jobs), step)}
 
-    unanimous = sum(1 for v in verdicts if v["pipeline"] == v["second"] == v["third"])
+    def ask(pair):
+        i, job = pair
+        with ThreadPoolExecutor(max_workers=2) as inner:
+            second = inner.submit(judge, job["claim"], job["sources"], EVAL_MODEL)
+            third = inner.submit(judge, job["claim"], job["sources"], THIRD_MODEL) \
+                if i in sampled else None
+            return second.result(), (third.result() if third else None)
 
-    print(f"statements compared: {len(verdicts)}")
-    print(f"  pipeline ({WORKER_MODEL}) vs second ({EVAL_MODEL}): {agreement('pipeline', 'second'):.0%}")
-    print(f"  pipeline vs third ({THIRD_MODEL}): {agreement('pipeline', 'third'):.0%}")
-    print(f"  second vs third: {agreement('second', 'third'):.0%}")
-    print(f"  all three agreed: {unanimous}/{len(verdicts)} ({unanimous / len(verdicts):.0%})")
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        answers = list(pool.map(ask, enumerate(jobs)))
 
-    split = [v for v in verdicts if not (v["pipeline"] == v["second"] == v["third"])]
-    print(f"\nstatements the judges split on ({len(split)}):")
-    for v in split[:10]:
-        print(f"\n  claim: {v['claim'][:110]}")
-        print(f"  pipeline={v['pipeline']}  second={v['second']}  third={v['third']}")
+    for job, (second, third) in zip(jobs, answers):
+        job["second"], job["third"] = second, third
 
+    pair_two = [j for j in jobs if j["second"] is not None]
+    trio = [j for j in jobs if j["second"] is not None and j["third"] is not None]
+
+    def agree(items, a, b):
+        return sum(1 for j in items if j[a] == j[b]) / len(items) if items else None
+
+    print(f"claims judged: {len(jobs)}")
+    print()
+    print(f"full comparison, both Groq judges, {len(pair_two)} claims")
+    print(f"  pipeline ({WORKER_MODEL}) vs second ({EVAL_MODEL}): {agree(pair_two, 'pipeline', 'second'):.0%}")
+    print()
+    if trio:
+        unanimous = sum(1 for j in trio if j["pipeline"] == j["second"] == j["third"])
+        print(f"sample cross-checked against a third provider, {len(trio)} claims ({THIRD_MODEL})")
+        print(f"  pipeline vs third:  {agree(trio, 'pipeline', 'third'):.0%}")
+        print(f"  second vs third:    {agree(trio, 'second', 'third'):.0%}")
+        print(f"  all three agreed:   {unanimous}/{len(trio)} ({unanimous / len(trio):.0%})")
+    else:
+        print("third judge unavailable (daily quota); two-judge comparison only")
+
+    split = [j for j in pair_two if j["pipeline"] != j["second"]]
+    print(f"\nthe two Groq judges disagreed on {len(split)} claims:")
+    for j in split[:8]:
+        print(f"\n  claim: {j['claim'][:105]}")
+        print(f"  pipeline={j['pipeline']}  second={j['second']}  third={j['third']}")
+
+    for j in jobs:
+        j.pop("sources", None)
     (HERE / "results" / "calibration.json").write_text(json.dumps({
-        "compared": len(verdicts),
-        "pipeline_vs_second": agreement("pipeline", "second"),
-        "pipeline_vs_third": agreement("pipeline", "third"),
-        "second_vs_third": agreement("second", "third"),
-        "unanimous": unanimous,
-        "verdicts": verdicts,
+        "claims": len(jobs),
+        "compared_two": len(pair_two),
+        "compared_three": len(trio),
+        "pipeline_vs_second": agree(pair_two, "pipeline", "second"),
+        "pipeline_vs_third": agree(trio, "pipeline", "third"),
+        "second_vs_third": agree(trio, "second", "third"),
+        "verdicts": jobs,
     }, indent=2))
 
 
