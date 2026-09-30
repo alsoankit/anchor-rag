@@ -132,9 +132,6 @@ def main():
     parser.add_argument("--questions", default=str(HERE / "questions.json"))
     parser.add_argument("--k", type=int, default=5)
     parser.add_argument("--configs", nargs="*", default=list(CONFIGS))
-    parser.add_argument("--tag", default="",
-                        help="suffix for the result files, for when the same configs are "
-                             "re-measured on a different writer model")
     args = parser.parse_args()
 
     questions = json.loads(Path(args.questions).read_text())
@@ -144,11 +141,11 @@ def main():
     for name in args.configs:
         print(f"\n{name}")
         run = run_config(name, questions, args.corpus, args.k)
-        (RESULTS / f"{args.corpus}-{name}{args.tag}.json").write_text(json.dumps(run, indent=2))
+        (RESULTS / f"{args.corpus}-{name}.json").write_text(json.dumps(run, indent=2))
         summaries.append(summarise(run))
 
     print("\n" + table(summaries))
-    (RESULTS / f"{args.corpus}-summary{args.tag}.json").write_text(json.dumps(summaries, indent=2))
+    (RESULTS / f"{args.corpus}-summary.json").write_text(json.dumps(summaries, indent=2))
 
 
 if __name__ == "__main__":
