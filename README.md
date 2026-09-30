@@ -106,7 +106,7 @@ to each other.
 | fixed-size | 0.92 | 0.80 | 1.00 | 0.045 | 0.943 | 2,737 |
 | hop | 0.92 | 1.00 | 1.00 | 0.091 | 0.944 | 2,150 |
 | hop+gate | 0.92 | 1.00 | 1.00 | 0.091 | 0.944 | 2,208 |
-| full | 0.92 | 1.00 | 1.00 | 0.091 | 0.925 | 7,211 |
+| full | 0.92 | 1.00 | 1.00 | 0.091 | 0.958 | 6,823 |
 
 `naive` has no instruction to stay inside the sources and no way to refuse. It is what a
 pipeline looks like when retrieval is treated as the whole job.
@@ -122,12 +122,12 @@ means fewer questions the model can't find enough to answer.
 
 ### The result I did not expect
 
-The `full` config decomposed 20 answers into 72 individual claims and found **14 of them
-unsupported by the retrieved text — 19%.** On the PEPs it was 5 of 22, **23%**. Two unrelated
+The `full` config decomposed 20 answers into 67 individual claims and found **12 of them
+unsupported by the retrieved text — 18%.** On the PEPs it was 5 of 22, **23%**. Two unrelated
 corpora landing in the same range.
 
 That is with the grounding prompt and the refusal gate both active. And the answer-level
-faithfulness judge scores those same answers at 0.925.
+faithfulness judge scores those same answers at 0.958.
 
 Those two measurements disagree, and that disagreement is the point. A judge reading a whole
 answer sees something mostly grounded and scores it as grounded. Decomposing it catches the
@@ -135,8 +135,8 @@ one sentence in five that quietly drifted past what the sources actually say. **
 prompts and refusal gates are not sufficient on their own**, which is a narrower and more
 useful claim than "this system prevents hallucination".
 
-Verification costs what you would expect: 7,211 tokens per question against 2,208 without it,
-roughly 3.3x, because every claim is its own call. That is the right trade for a compliance
+Verification costs what you would expect: 6,823 tokens per question against 2,208 without it,
+roughly 3.1x, because every claim is its own call. That is the right trade for a compliance
 question and the wrong one for a chatbot.
 
 ### How much to trust the faithfulness numbers
@@ -148,8 +148,27 @@ open-weight model, and a Gemini model from a different provider entirely. That t
 matters most, because the first two are served through the same API and their agreeing could
 be an artefact of shared lineage rather than the statements being clear-cut.
 
-Agreement is not accuracy. It only says whether the signal is stable enough that a difference
-between two configurations means something.
+| comparison | claims | agreement |
+|---|---|---|
+| pipeline checker vs second judge (both Groq, different families) | 58 | 78% |
+| pipeline checker vs third judge (different provider) | 20 | 80% |
+| second judge vs third judge | 20 | 90% |
+| all three agreed | 20 | 70% |
+
+The third judge grades a sample rather than everything, because its free tier allows twenty
+requests a day. Two numbers, two sample sizes, reported separately rather than blended into
+one figure that implies more coverage than exists.
+
+Around 78 to 80 percent is a reasonable place to land. It says the faithfulness signal is
+stable enough that a difference between two configurations means something, and not so
+stable that any single number should be quoted as fact. Agreement is not accuracy: three
+models agreeing says they read the evidence the same way, not that they read it correctly.
+
+Where they disagree is itself readable. Most of the splits are the pipeline's checker being
+stricter than the others on claims that paraphrase a provision rather than restate it — it
+wants the words to be there, the others accept the sense. For a compliance system that is
+arguably the right bias, but it is a bias, and it is why the unsupported-claim rate above
+should be read as an upper bound.
 
 ## Running it
 
@@ -181,9 +200,9 @@ python -m eval.run_eval --corpus aiact
   harder questions, not more mechanisms.
 - **`all-MiniLM-L6-v2` is small and old.** Chosen because it is free, local, and fast enough
   to re-embed the whole corpus in under a minute while iterating.
-- **`eval/calibrate.py` judges sequentially** and takes about twenty minutes. `verify.py`
-  already does the same work four at a time; the calibration script never got the same
-  treatment.
+- **The third calibration judge samples 20 of 67 claims**, because its free tier allows
+  twenty requests per day. The two-judge comparison covers everything; the cross-provider
+  check does not.
 
 ## Notes on things that broke
 
@@ -200,6 +219,16 @@ retrieval returned Annex III's *header* at 0.588 and the employment provision th
 at 0.531. The header repeats the question's vocabulary; the answer doesn't. Folding list
 lead-ins into their items and putting unit headings into the embedding moved it to 0.74 and
 rank one.
+
+The calibration had a bug that produced a confident, plausible, completely wrong result. It
+reconstructed "the sources" a judge should grade against by taking one chunk per retrieved
+unit, with no ordering. Article 99 has nineteen paragraphs; the answer had been written from
+the one containing the fine, and the reconstruction handed over the first. Every judge but
+the pipeline's own was grading against evidence that did not contain the answer. They said
+unsupported, agreed with each other at 94%, and agreement between two measurements looked
+like confirmation when it was a shared input. Agreement across configurations that were
+reading the same wrong thing is not evidence of anything. The eval now records exact chunk
+ids and rebuilds from those, and the agreement numbers went from 28% to 78%.
 
 And the evaluation itself had a bug worth more than any of them. Refusal was detected by
 checking the answer for the string `NOT IN SOURCES` — the exact phrase the grounding prompt
