@@ -6,8 +6,46 @@ Point it at a set of documents. Ask a question. It answers using only the retrie
 a citation on every claim, verifies each claim against its source before returning it, and says
 so plainly when the documents don't cover your question.
 
-Retrieval decides what the model is allowed to *see*. Verification decides what it is allowed
-to *say*.
+---
+
+## The problem, concretely
+
+Say you work at a company shipping a CV screening tool into Europe, and someone asks:
+**"does the EU AI Act classify what we built as high risk?"**
+
+That answer is worth getting right and expensive to get wrong. So you point an LLM at the
+regulation. Three things go wrong, and none of them are visible in the output:
+
+1. **The model already knows a bit about the AI Act from training.** It will answer confidently
+   whether or not your retrieval found anything relevant, and the answer *looks* the same either
+   way.
+2. **The answer is split across two documents that share no vocabulary.** Article 6 says a
+   system is high risk if it appears in Annex III. The employment entry in Annex III is what
+   actually answers you — and it never uses the words "CV" or "screening". Vector search scores
+   it below documents that merely *discuss* high-risk systems.
+3. **When retrieval comes back with nothing useful, the pipeline answers anyway**, because
+   nothing in it is allowed to say "I don't know."
+
+Anchor is what the pipeline looks like once you've fixed those three. **Retrieval decides what
+the model is allowed to see; verification decides what it is allowed to say.**
+
+---
+
+## What it looks like
+
+![Anchor UI](docs/ui.png)
+
+The interface is deliberately not a chat box. The retrieved chunks, which of them arrived by
+following a citation, the gate's decision and the per-claim verdicts are all on screen next to
+the answer — because that is where the engineering is. The sidebar toggles let you switch the
+citation hop off and re-run, so the difference it makes is something you can watch rather than
+read about.
+
+```bash
+streamlit run app.py
+```
+
+On the command line:
 
 ```
 $ anchor ask "Is an AI system used to evaluate job applicants considered high risk?"
@@ -31,7 +69,8 @@ what it did
   checked 1 statements, 0 unsupported
 ```
 
-And when the corpus can't answer it:
+And when the corpus can't answer it — here the question is about the GDPR, a different
+regulation entirely:
 
 ```
 $ anchor ask "What is the maximum fine under the GDPR for unlawful profiling?"
@@ -205,12 +244,14 @@ bias, and it means the 18% figure should be read as an upper bound.
 ## Running it
 
 ```bash
-docker compose up -d
+docker compose up -d                      # Postgres + pgvector
 pip install -r requirements.txt
-cp .env.example .env              # add a Groq key. Several are supported.
+cp .env.example .env                      # add a Groq key. Several are supported.
 
-python -m anchor.cli ingest aiact
+python -m anchor.cli ingest aiact         # ~4 min first time, cached after
 python -m anchor.cli ask "Which AI practices does the Regulation prohibit?"
+
+streamlit run app.py                      # or use the UI
 ```
 
 | command | what it does |
@@ -222,6 +263,7 @@ python -m anchor.cli ask "Which AI practices does the Regulation prohibit?"
 | `eval.sweep` | retrieval parameter sweep — free, no model calls |
 | `eval.run_eval` | the full ablation across pipeline configurations |
 | `eval.calibrate` | how much the faithfulness judge can be trusted |
+| `streamlit run app.py` | the UI, with pipeline toggles so you can see what each stage buys |
 
 `anchor.api` exposes `/ask` and `/assess` over FastAPI.
 
