@@ -29,6 +29,24 @@ regulation. Three things go wrong, and none of them are visible in the output:
 Anchor is what the pipeline looks like once you've fixed those three. **Retrieval decides what
 the model is allowed to see; verification decides what it is allowed to say.**
 
+### Where this shape of problem shows up
+
+The AI Act is the demo corpus, not the point. The engine is built for **documents that reference
+each other**, which is most documents worth asking questions about:
+
+- **Contracts.** "Subject to the limitations in Section 7.2", "as defined in Schedule A". A
+  clause read without the thing it points at is how contract review goes wrong.
+- **Insurance policies.** The exclusion that matters is three cross-references away from the
+  cover you asked about.
+- **Technical standards.** RFCs and ISO documents cite each other constantly; RFC 9110 was the
+  first corpus I tried.
+- **Internal policy and compliance manuals**, where the rule and its exception are written in
+  different documents by different teams.
+
+In all of them, similarity search retrieves the clause that *mentions* your topic and misses the
+one that *governs* it. That is the problem this is built around, and switching corpora means
+writing one adapter class.
+
 ---
 
 ## What it looks like
