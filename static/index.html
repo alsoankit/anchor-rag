@@ -4,100 +4,174 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Anchor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg:#0f1115; --panel:#171a21; --line:#272b34; --text:#e6e8ec; --dim:#9aa1ad;
-    --accent:#4f8cff; --ok:#3fb950; --bad:#f85149; --warn:#d29922;
-  }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text);
-         font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
-  .wrap { max-width:1180px; margin:0 auto; padding:28px 20px 60px; }
-  h1 { font-size:26px; margin:0 0 4px; letter-spacing:-.4px; }
-  .sub { color:var(--dim); margin-bottom:22px; font-size:14px; }
-  .ask { display:flex; gap:10px; margin-bottom:10px; }
-  input[type=text] { flex:1; background:var(--panel); border:1px solid var(--line);
-    color:var(--text); padding:12px 14px; border-radius:8px; font-size:15px; }
-  input[type=text]:focus { outline:none; border-color:var(--accent); }
-  button { background:var(--accent); color:#fff; border:0; padding:12px 22px;
-    border-radius:8px; font-size:15px; cursor:pointer; font-weight:600; }
-  button:disabled { opacity:.5; cursor:default; }
-  .opts { display:flex; gap:18px; flex-wrap:wrap; color:var(--dim); font-size:13px;
-    margin-bottom:8px; align-items:center; }
-  .opts label { cursor:pointer; user-select:none; }
-  .examples { color:var(--dim); font-size:13px; margin-bottom:24px; }
-  .examples a { color:var(--accent); text-decoration:none; margin-right:14px; cursor:pointer; }
-  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px;
-    padding:18px; margin-bottom:18px; }
-  .panel h2 { font-size:13px; text-transform:uppercase; letter-spacing:.9px;
-    color:var(--dim); margin:0 0 12px; font-weight:600; }
+:root{
+  --bg:#0b0d12; --raise:#141821; --card:#171c26; --line:#242b38; --line2:#2f3744;
+  --text:#eef1f6; --soft:#aeb6c4; --dim:#78818f;
+  --blue:#5b9cff; --green:#44c767; --red:#ff6b6b; --amber:#ffb545;
+  --radius:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:
+    radial-gradient(1100px 500px at 15% -10%, #16203a 0%, transparent 60%),
+    radial-gradient(900px 420px at 100% 0%, #1b1630 0%, transparent 55%),
+    var(--bg);
+  background-attachment:fixed;
+  color:var(--text); font-family:Inter,system-ui,sans-serif; font-size:17px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1120px;margin:0 auto;padding:46px 24px 90px}
+header{margin-bottom:34px}
+.brand{display:flex;align-items:center;gap:13px;margin-bottom:10px}
+.mark{width:34px;height:34px;border-radius:10px;flex:none;
+  background:linear-gradient(140deg,var(--blue),#8d6bff);
+  display:grid;place-items:center;font-weight:700;font-size:17px;color:#fff;
+  box-shadow:0 5px 22px rgba(91,156,255,.4)}
+h1{font-size:34px;font-weight:700;letter-spacing:-.9px}
+.tagline{font-size:18px;color:var(--soft);max-width:660px}
+.tagline b{color:var(--text);font-weight:600}
 
-  /* the pipeline diagram */
-  .flow { display:flex; align-items:stretch; gap:0; overflow-x:auto; padding:4px 0; }
-  .node { flex:1; min-width:118px; border:1px solid var(--line); border-radius:8px;
-    padding:11px 10px; text-align:center; background:#12151b; position:relative;
-    transition:border-color .25s, background .25s, box-shadow .25s; }
-  .node .name { font-size:12.5px; font-weight:600; }
-  .node .det { font-size:11px; color:var(--dim); margin-top:3px; min-height:26px;
-    line-height:1.3; word-break:break-word; }
-  .node.active { border-color:var(--accent); background:#152138;
-    box-shadow:0 0 0 1px var(--accent), 0 0 18px rgba(79,140,255,.25); }
-  .node.active .name { color:var(--accent); }
-  .node.done { border-color:#24482c; background:#121a14; }
-  .node.done .name { color:var(--ok); }
-  .node.skipped { opacity:.38; }
-  .node.failed { border-color:#5a2222; background:#1c1314; }
-  .node.failed .name { color:var(--bad); }
-  .arrow { align-self:center; color:var(--line); padding:0 7px; font-size:16px; }
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  padding:24px;margin-bottom:20px}
+.card h2{font-size:12px;font-weight:600;letter-spacing:1.3px;text-transform:uppercase;
+  color:var(--dim);margin-bottom:16px}
 
-  .answer { font-size:16px; line-height:1.65; }
-  .refused { color:var(--warn); }
-  .claim { padding:9px 0; border-bottom:1px solid var(--line); font-size:14px; }
-  .claim:last-child { border-bottom:0; }
-  .tag { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.6px;
-    padding:2px 7px; border-radius:4px; margin-right:9px; }
-  .tag.ok { background:#12301b; color:var(--ok); }
-  .tag.bad { background:#3a1618; color:var(--bad); }
-  .quote { color:var(--dim); font-size:12.5px; margin:5px 0 0 54px; font-style:italic; }
-  .src { padding:11px 0; border-bottom:1px solid var(--line); }
-  .src:last-child { border-bottom:0; }
-  .src .head { font-size:13.5px; font-weight:600; }
-  .src .meta { color:var(--dim); font-weight:400; font-size:12.5px; }
-  .followed { color:var(--warn); }
-  .src .body { color:var(--dim); font-size:12.5px; margin-top:4px; }
-  .cols { display:grid; grid-template-columns:2fr 1fr; gap:18px; }
-  .trace { font-size:12.5px; color:var(--dim); }
-  .trace div { padding:3px 0; }
-  @media (max-width:860px){ .cols { grid-template-columns:1fr; } }
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+input[type=text]{flex:1;min-width:260px;background:var(--raise);border:1.5px solid var(--line2);
+  color:var(--text);padding:15px 17px;border-radius:11px;font-size:17px;font-family:inherit}
+input[type=text]::placeholder{color:var(--dim)}
+input[type=text]:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 4px rgba(91,156,255,.14)}
+.btn{background:var(--blue);color:#06101f;border:0;padding:15px 28px;border-radius:11px;
+  font-size:16px;font-weight:650;cursor:pointer;font-family:inherit;white-space:nowrap;
+  transition:transform .12s, filter .12s}
+.btn:hover:not(:disabled){filter:brightness(1.08);transform:translateY(-1px)}
+.btn:disabled{opacity:.45;cursor:default;transform:none}
+.btn.ghost{background:transparent;color:var(--soft);border:1.5px solid var(--line2)}
+.btn.ghost:hover{color:var(--text);border-color:var(--blue)}
+
+.pills{display:flex;gap:9px;flex-wrap:wrap;margin-top:15px}
+.pill{background:var(--raise);border:1.5px solid var(--line);color:var(--soft);
+  padding:8px 15px;border-radius:999px;font-size:14.5px;cursor:pointer;transition:all .14s}
+.pill:hover{border-color:var(--line2);color:var(--text)}
+.pill.on{background:rgba(91,156,255,.15);border-color:var(--blue);color:#cfe0ff}
+.pill .n{color:var(--dim);font-size:13px;margin-left:5px}
+
+.toggles{display:flex;gap:22px;flex-wrap:wrap;margin-top:17px;padding-top:17px;
+  border-top:1px solid var(--line)}
+.tog{display:flex;align-items:center;gap:9px;cursor:pointer;font-size:15px;color:var(--soft);
+  user-select:none}
+.tog input{appearance:none;width:40px;height:23px;border-radius:999px;background:var(--line2);
+  position:relative;cursor:pointer;transition:background .18s;flex:none}
+.tog input::after{content:"";position:absolute;top:3px;left:3px;width:17px;height:17px;
+  border-radius:50%;background:#8b94a4;transition:all .18s}
+.tog input:checked{background:rgba(91,156,255,.4)}
+.tog input:checked::after{left:20px;background:var(--blue)}
+.tog input:checked + span{color:var(--text)}
+
+.examples{display:flex;gap:9px;flex-wrap:wrap;margin-top:15px}
+.ex{background:transparent;border:1px dashed var(--line2);color:var(--soft);padding:8px 14px;
+  border-radius:9px;font-size:14.5px;cursor:pointer;font-family:inherit}
+.ex:hover{border-color:var(--blue);color:var(--text);border-style:solid}
+
+/* pipeline */
+.flow{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding:6px 2px}
+.node{flex:1;min-width:150px;border:1.5px solid var(--line);border-radius:12px;padding:15px 13px;
+  background:var(--raise);text-align:center;transition:all .3s}
+.node .nm{font-size:15.5px;font-weight:600}
+.node .dt{font-size:13px;color:var(--dim);margin-top:5px;min-height:34px;line-height:1.4}
+.node.active{border-color:var(--blue);background:rgba(91,156,255,.1);
+  box-shadow:0 0 0 1px var(--blue),0 8px 30px rgba(91,156,255,.22)}
+.node.active .nm{color:var(--blue)}
+.node.active .dt{color:var(--soft)}
+.node.done{border-color:rgba(68,199,103,.45);background:rgba(68,199,103,.07)}
+.node.done .nm{color:var(--green)}
+.node.failed{border-color:rgba(255,107,107,.5);background:rgba(255,107,107,.08)}
+.node.failed .nm{color:var(--red)}
+.node.off{opacity:.3}
+.sep{align-self:center;color:var(--line2);padding:0 9px;font-size:19px}
+
+/* progress */
+.bar{height:9px;background:var(--raise);border-radius:999px;overflow:hidden;margin:16px 0 10px;
+  border:1px solid var(--line)}
+.bar i{display:block;height:100%;width:0;border-radius:999px;
+  background:linear-gradient(90deg,var(--blue),#8d6bff);transition:width .35s ease}
+.est{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:14px;margin:4px 0 20px}
+.est div{background:var(--raise);border:1px solid var(--line);border-radius:11px;padding:14px 16px}
+.est .v{font-size:24px;font-weight:650;font-family:"JetBrains Mono",monospace}
+.est .l{font-size:12.5px;color:var(--dim);margin-top:3px}
+.note{font-size:15px;color:var(--soft);background:rgba(91,156,255,.08);
+  border-left:3px solid var(--blue);padding:13px 16px;border-radius:0 9px 9px 0;margin-bottom:18px}
+
+/* results */
+.answer{font-size:18.5px;line-height:1.72}
+.answer.refused{color:var(--amber)}
+.reason{font-size:15px;color:var(--dim);margin-top:9px}
+.claim{display:flex;gap:13px;padding:14px 0;border-bottom:1px solid var(--line);font-size:16px;
+  align-items:flex-start}
+.claim:last-child{border-bottom:0}
+.badge{font-size:11.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;
+  padding:4px 10px;border-radius:7px;white-space:nowrap;flex:none;margin-top:2px}
+.badge.ok{background:rgba(68,199,103,.16);color:var(--green)}
+.badge.no{background:rgba(255,107,107,.16);color:var(--red)}
+.quote{font-size:14.5px;color:var(--dim);font-style:italic;margin-top:7px}
+.src{padding:15px 0;border-bottom:1px solid var(--line)}
+.src:last-child{border-bottom:0}
+.src .h{font-size:16px;font-weight:600;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.score{font-family:"JetBrains Mono",monospace;font-size:13.5px;color:var(--dim);font-weight:400}
+.hopped{font-size:12.5px;background:rgba(255,181,69,.16);color:var(--amber);padding:3px 9px;
+  border-radius:7px;font-weight:600}
+.src .b{font-size:15px;color:var(--soft);margin-top:7px;line-height:1.58}
+.grid{display:grid;grid-template-columns:1.8fr 1fr;gap:20px}
+.trace div{font-size:14.5px;color:var(--soft);padding:6px 0;border-bottom:1px solid var(--line)}
+.trace div:last-child{border-bottom:0}
+.hide{display:none}
+.drop{border:2px dashed var(--line2);border-radius:12px;padding:26px;text-align:center;
+  cursor:pointer;transition:all .16s}
+.drop:hover{border-color:var(--blue);background:rgba(91,156,255,.05)}
+.drop b{color:var(--blue)}
+.drop small{display:block;color:var(--dim);font-size:14px;margin-top:6px}
+@media(max-width:820px){.grid{grid-template-columns:1fr}h1{font-size:28px}body{font-size:16px}}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Anchor</h1>
-  <div class="sub">Answers only what the documents support. Cites every claim. Refuses when
-    the evidence is not there.</div>
+  <header>
+    <div class="brand"><div class="mark">A</div><h1>Anchor</h1></div>
+    <p class="tagline">Answers only what your documents support. Cites every claim,
+      <b>checks each one before showing it</b>, and refuses when the evidence is not there.</p>
+  </header>
 
-  <div class="ask">
-    <input type="text" id="q" placeholder="Ask something about the corpus">
-    <button id="go">Ask</button>
+  <div class="card">
+    <h2>Corpus</h2>
+    <div class="pills" id="pills"></div>
+    <div class="drop" id="drop" style="margin-top:16px">
+      <b>Upload a PDF</b> or drop one here
+      <small>Contracts, policies, standards — anything with cross-references</small>
+    </div>
+    <input type="file" id="file" accept="application/pdf" class="hide">
   </div>
 
-  <div class="opts">
-    <label><input type="radio" name="corpus" value="aiact" checked> EU AI Act</label>
-    <label><input type="radio" name="corpus" value="peps"> Python PEPs</label>
-    <span style="color:var(--line)">|</span>
-    <label><input type="checkbox" id="hop" checked> follow citations</label>
-    <label><input type="checkbox" id="gate" checked> refusal gate</label>
-    <label><input type="checkbox" id="check" checked> verify claims</label>
+  <div class="card hide" id="estimate"></div>
+
+  <div class="card" id="askcard">
+    <h2>Question</h2>
+    <div class="row">
+      <input type="text" id="q" placeholder="Ask something about the selected corpus">
+      <button class="btn" id="go">Ask</button>
+    </div>
+    <div class="examples" id="examples"></div>
+    <div class="toggles">
+      <label class="tog"><input type="checkbox" id="hop" checked><span>follow citations</span></label>
+      <label class="tog"><input type="checkbox" id="gate" checked><span>refusal gate</span></label>
+      <label class="tog"><input type="checkbox" id="check" checked><span>verify every claim</span></label>
+    </div>
   </div>
 
-  <div class="examples">
-    <a data-q="Is an AI system used to evaluate job applicants considered high risk?">needs a citation hop</a>
-    <a data-q="Which AI practices does the Regulation prohibit outright?">answerable directly</a>
-    <a data-q="What is the maximum fine under the GDPR for unlawful profiling?">should be refused</a>
-  </div>
-
-  <div class="panel">
+  <div class="card">
     <h2>Pipeline</h2>
     <div class="flow" id="flow"></div>
   </div>
@@ -106,116 +180,153 @@
 </div>
 
 <script>
-const STAGES = [
-  ["search",   "Retrieve",  "cosine search over pgvector"],
-  ["hop",      "Follow",    "walk citation edges"],
-  ["gate",     "Gate",      "is the evidence enough?"],
-  ["generate", "Generate",  "answer from sources only"],
-  ["verify",   "Verify",    "check every claim"],
-];
+const STAGES=[["search","Retrieve","cosine search over pgvector"],
+              ["hop","Follow","walk citation edges"],
+              ["gate","Gate","is the evidence enough?"],
+              ["generate","Generate","answer from sources only"],
+              ["verify","Verify","check every claim"]];
+const EXAMPLES={aiact:[["needs a citation hop","Is an AI system used to evaluate job applicants considered high risk?"],
+                       ["answerable directly","Which AI practices does the Regulation prohibit outright?"],
+                       ["should be refused","What is the maximum fine under the GDPR for unlawful profiling?"]],
+                peps:[["needs a citation hop","What should an author follow when a style rule would make code less readable?"],
+                      ["answerable directly","How many spaces should be used per indentation level?"],
+                      ["should be refused","What is the scheduled release date of Python 3.15?"]]};
 
-const flow = document.getElementById("flow");
-function drawFlow() {
-  flow.innerHTML = "";
-  STAGES.forEach(([id, name, hint], i) => {
-    if (i) { const a = document.createElement("div"); a.className = "arrow";
-             a.textContent = "→"; flow.appendChild(a); }
-    const n = document.createElement("div");
-    n.className = "node"; n.id = "n-" + id;
-    n.innerHTML = `<div class="name">${name}</div><div class="det">${hint}</div>`;
-    flow.appendChild(n);
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+let corpus="aiact", pending=null, source=null;
+
+function drawFlow(){
+  $("flow").innerHTML="";
+  STAGES.forEach(([id,nm,dt],i)=>{
+    if(i){const s=document.createElement("div");s.className="sep";s.textContent="→";$("flow").append(s);}
+    const n=document.createElement("div");n.className="node";n.id="n-"+id;
+    n.innerHTML=`<div class="nm">${nm}</div><div class="dt">${dt}</div>`;$("flow").append(n);
   });
 }
-drawFlow();
+function setNode(id,cls,dt){const n=$("n-"+id);if(!n)return;
+  if(cls)n.className="node "+cls; if(dt!==undefined)n.querySelector(".dt").textContent=dt;}
 
-function setNode(id, cls, detail) {
-  const n = document.getElementById("n-" + id);
-  if (!n) return;
-  if (cls) n.className = "node " + cls;
-  if (detail !== undefined) n.querySelector(".det").textContent = detail;
+async function loadCorpora(){
+  const list=await (await fetch("/corpora")).json();
+  $("pills").innerHTML=list.map(c=>
+    `<button class="pill${c.id===corpus?" on":""}" data-c="${c.id}">${esc(c.label)}<span class="n">${c.chunks}</span></button>`).join("");
+  document.querySelectorAll(".pill").forEach(p=>p.onclick=()=>{corpus=p.dataset.c;loadCorpora();drawExamples();});
+}
+function drawExamples(){
+  const ex=EXAMPLES[corpus]||[];
+  $("examples").innerHTML=ex.map(([l,q])=>`<button class="ex" data-q="${esc(q)}">${l}</button>`).join("");
+  document.querySelectorAll(".ex").forEach(b=>b.onclick=()=>{$("q").value=b.dataset.q;run();});
 }
 
-const out = document.getElementById("out");
-const esc = s => String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+/* ---------- upload: parse, estimate, confirm, ingest with a progress bar ---------- */
+$("drop").onclick=()=>$("file").click();
+$("drop").ondragover=e=>{e.preventDefault();$("drop").style.borderColor="var(--blue)";};
+$("drop").ondragleave=()=>$("drop").style.borderColor="";
+$("drop").ondrop=e=>{e.preventDefault();$("drop").style.borderColor="";if(e.dataTransfer.files[0])upload(e.dataTransfer.files[0]);};
+$("file").onchange=e=>{if(e.target.files[0])upload(e.target.files[0]);};
 
-document.querySelectorAll(".examples a").forEach(a =>
-  a.onclick = () => { document.getElementById("q").value = a.dataset.q; run(); });
-document.getElementById("go").onclick = run;
-document.getElementById("q").addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+async function upload(f){
+  const box=$("estimate");box.classList.remove("hide");
+  box.innerHTML=`<h2>Reading ${esc(f.name)}</h2><div class="bar"><i style="width:35%"></i></div>`;
+  const body=new FormData();body.append("file",f);
+  const res=await fetch("/upload",{method:"POST",body});
+  if(!res.ok){const e=await res.json().catch(()=>({detail:"upload failed"}));
+    box.innerHTML=`<h2>Could not read that file</h2><p class="reason">${esc(e.detail)}</p>`;return;}
+  pending=await res.json();
+  box.innerHTML=`
+    <h2>${esc(pending.filename)} — ready to ingest</h2>
+    <div class="est">
+      <div><div class="v">${pending.pages}</div><div class="l">pages</div></div>
+      <div><div class="v">${pending.units}</div><div class="l">chunks</div></div>
+      <div><div class="v">${pending.edges}</div><div class="l">cross-references</div></div>
+      <div><div class="v">~${pending.seconds}s</div><div class="l">to embed</div></div>
+      <div><div class="v">0</div><div class="l">API tokens</div></div>
+    </div>
+    <div class="note"><b>Ingesting costs nothing.</b> Embeddings run locally, so this spends
+      time rather than credits. Each question afterwards costs about
+      ${(pending.tokens_per_question/1000).toFixed(1)}k tokens, or
+      ${(pending.tokens_per_verified_question/1000).toFixed(1)}k with claim verification on.
+      Split into ${esc(pending.split_by)}.</div>
+    <div class="row">
+      <button class="btn" id="goIngest">Ingest it</button>
+      <button class="btn ghost" id="cancel">Cancel</button>
+    </div>`;
+  $("goIngest").onclick=ingest;
+  $("cancel").onclick=()=>{box.classList.add("hide");pending=null;};
+}
 
-let source = null;
-
-function run() {
-  const question = document.getElementById("q").value.trim();
-  if (!question) return;
-  if (source) source.close();
-
-  drawFlow();
-  out.innerHTML = "";
-  document.getElementById("go").disabled = true;
-
-  const corpus = document.querySelector("input[name=corpus]:checked").value;
-  const hop = document.getElementById("hop").checked;
-  const gate = document.getElementById("gate").checked;
-  const check = document.getElementById("check").checked;
-  if (!hop) setNode("hop", "skipped");
-  if (!gate) setNode("gate", "skipped");
-  if (!check) setNode("verify", "skipped");
-
-  const url = `/ask/stream?question=${encodeURIComponent(question)}&corpus=${corpus}`
-            + `&hop=${hop}&gate=${gate}&check=${check}`;
-  source = new EventSource(url);
-
-  source.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    const [base, phase] = msg.stage.split(".");
-
-    if (msg.stage === "result")  { render(msg.payload); finish(); return; }
-    if (msg.stage === "error")   { out.innerHTML = `<div class="panel refused">${esc(msg.detail)}</div>`;
-                                   finish(); return; }
-    if (msg.stage === "refused") { setNode("generate", "failed", msg.detail); return; }
-    if (msg.stage === "rewrite") { setNode("gate", "failed", msg.detail); return; }
-
-    if (phase === "done") setNode(base, "done", msg.detail);
-    else                  setNode(base, "active", msg.detail);
+function ingest(){
+  const box=$("estimate");
+  box.innerHTML=`<h2>Ingesting ${esc(pending.filename)}</h2>
+    <div class="bar"><i id="pbar"></i></div>
+    <p class="reason" id="pmsg">starting</p>`;
+  const es=new EventSource("/ingest/stream?token="+pending.token);
+  es.onmessage=e=>{
+    const m=JSON.parse(e.data);
+    if(m.stage==="progress"){
+      const pct=Math.round(m.done/m.total*100);
+      $("pbar").style.width=pct+"%";
+      $("pmsg").textContent=`embedded ${m.done} of ${m.total} chunks (${pct}%)`;
+    } else if(m.stage==="start"){ $("pmsg").textContent=m.detail; }
+    else if(m.stage==="done"){
+      $("pbar").style.width="100%";
+      box.innerHTML=`<h2>${esc(pending.filename)} is ready</h2>
+        <p class="reason">${esc(m.detail)}. Selected as the active corpus — ask it something.</p>`;
+      corpus=m.corpus;es.close();loadCorpora();drawExamples();pending=null;
+    } else if(m.stage==="error"){
+      box.innerHTML=`<h2>Ingest failed</h2><p class="reason">${esc(m.detail)}</p>`;es.close();
+    }
   };
-  source.onerror = finish;
+  es.onerror=()=>es.close();
 }
 
-function finish() {
-  document.getElementById("go").disabled = false;
-  if (source) { source.close(); source = null; }
-  document.querySelectorAll(".node.active").forEach(n => n.className = "node done");
+/* ---------- ask ---------- */
+$("go").onclick=run;
+$("q").addEventListener("keydown",e=>{if(e.key==="Enter")run();});
+
+function run(){
+  const question=$("q").value.trim(); if(!question)return;
+  if(source)source.close();
+  drawFlow(); $("out").innerHTML=""; $("go").disabled=true;
+  const hop=$("hop").checked,gate=$("gate").checked,check=$("check").checked;
+  if(!hop)setNode("hop","off"); if(!gate)setNode("gate","off"); if(!check)setNode("verify","off");
+  source=new EventSource(`/ask/stream?question=${encodeURIComponent(question)}&corpus=${corpus}`
+    +`&hop=${hop}&gate=${gate}&check=${check}`);
+  source.onmessage=e=>{
+    const m=JSON.parse(e.data), [base,phase]=m.stage.split(".");
+    if(m.stage==="result"){render(m.payload);finish();return;}
+    if(m.stage==="error"){$("out").innerHTML=`<div class="card"><p class="answer refused">${esc(m.detail)}</p></div>`;finish();return;}
+    if(m.stage==="refused"){setNode("generate","failed",m.detail);return;}
+    if(m.stage==="rewrite"){setNode("gate","failed",m.detail);return;}
+    setNode(base,phase==="done"?"done":"active",m.detail);
+  };
+  source.onerror=finish;
 }
+function finish(){$("go").disabled=false;if(source){source.close();source=null;}
+  document.querySelectorAll(".node.active").forEach(n=>n.className="node done");}
 
-function render(r) {
-  let html = `<div class="panel"><h2>Answer${r.refused ? " — refused" : ""}</h2>`
-           + `<div class="answer${r.refused ? " refused" : ""}">${esc(r.answer)}</div>`
-           + (r.refused && r.reason ? `<div class="quote" style="margin-left:0">${esc(r.reason)}</div>` : "")
-           + `</div>`;
-
-  if (r.claims.length) {
-    const bad = r.claims.filter(c => !c.supported).length;
-    html += `<div class="panel"><h2>Claim check — ${r.claims.length - bad} of ${r.claims.length} supported</h2>`;
-    r.claims.forEach(c => {
-      html += `<div class="claim"><span class="tag ${c.supported ? "ok" : "bad"}">`
-            + `${c.supported ? "supported" : "not supported"}</span>${esc(c.claim)}`
-            + (c.quote ? `<div class="quote">“${esc(c.quote)}”</div>` : "") + `</div>`;
-    });
-    html += `</div>`;
+function render(r){
+  let h=`<div class="card"><h2>Answer${r.refused?" — refused":""}</h2>
+    <p class="answer${r.refused?" refused":""}">${esc(r.answer)}</p>
+    ${r.refused&&r.reason?`<p class="reason">${esc(r.reason)}</p>`:""}</div>`;
+  if(r.claims.length){
+    const bad=r.claims.filter(c=>!c.supported).length;
+    h+=`<div class="card"><h2>Claim check — ${r.claims.length-bad} of ${r.claims.length} supported</h2>`
+      +r.claims.map(c=>`<div class="claim"><span class="badge ${c.supported?"ok":"no"}">${c.supported?"supported":"not supported"}</span>
+        <div>${esc(c.claim)}${c.quote?`<div class="quote">“${esc(c.quote)}”</div>`:""}</div></div>`).join("")+`</div>`;
   }
-
-  html += `<div class="cols"><div class="panel"><h2>Sources</h2>`;
-  r.sources.forEach(s => {
-    html += `<div class="src"><div class="head">[${s.marker}] ${esc(s.citation)}`
-          + `<span class="meta"> · score ${s.score}`
-          + (s.followed_from ? ` · <span class="followed">followed from ${esc(s.followed_from)}</span>` : "")
-          + `</span></div><div class="body">${esc(s.text)}…</div></div>`;
-  });
-  html += `</div><div class="panel"><h2>What it did · ${r.seconds}s</h2><div class="trace">`
-        + r.trace.map(t => `<div>${esc(t)}</div>`).join("") + `</div></div></div>`;
-  out.innerHTML = html;
+  h+=`<div class="grid"><div class="card"><h2>Sources</h2>`
+    +r.sources.map(s=>`<div class="src"><div class="h">[${s.marker}] ${esc(s.citation)}
+      <span class="score">${s.score}</span>
+      ${s.followed_from?`<span class="hopped">followed from ${esc(s.followed_from)}</span>`:""}</div>
+      <div class="b">${esc(s.text)}…</div></div>`).join("")
+    +`</div><div class="card"><h2>What it did · ${r.seconds}s</h2><div class="trace">`
+    +r.trace.map(t=>`<div>${esc(t)}</div>`).join("")+`</div></div></div>`;
+  $("out").innerHTML=h;
 }
+
+drawFlow();loadCorpora();drawExamples();
 </script>
 </body>
 </html>

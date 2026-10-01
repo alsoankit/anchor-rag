@@ -111,3 +111,44 @@ def ingest(corpus_name: str, strategy: str = "structural", limit: int | None = N
 
     conn.close()
     print(f"{corpus_name} / {strategy}: {total} chunks")
+
+
+def ingest_units(corpus_name: str, units: list[Unit], on_progress=None, batch: int = 32):
+    """Store units that were built elsewhere, reporting progress as it goes.
+
+    The corpus adapters produce their units lazily per source, which suits a long ingest
+    from the web. An uploaded file is already in hand, so it arrives here as one list and
+    the only thing a caller wants to know is how far along it is.
+    """
+    conn = connect()
+    conn.execute("delete from chunks where corpus = %s", (corpus_name,))
+    conn.execute("delete from citations where corpus = %s", (corpus_name,))
+    conn.commit()
+
+    done = 0
+    try:
+        for start in range(0, len(units), batch):
+            window = units[start:start + batch]
+            vectors = embed([f"{u.label}. {u.title}. {u.text}" for u in window])
+            with conn.cursor() as cur:
+                for unit, vector in zip(window, vectors):
+                    cur.execute(
+                        """insert into chunks
+                           (corpus, strategy, unit_id, label, title, part, citation, text,
+                            url, embedding)
+                           values (%s, 'structural', %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        (corpus_name, unit.unit_id, unit.label, unit.title, unit.part,
+                         unit.citation, unit.text, unit.url, vector),
+                    )
+                    for target in unit.refs:
+                        cur.execute(
+                            "insert into citations values (%s, %s, %s) on conflict do nothing",
+                            (corpus_name, unit.unit_id, target),
+                        )
+            conn.commit()
+            done += len(window)
+            if on_progress:
+                on_progress(done, len(units))
+    finally:
+        conn.close()
+    return done

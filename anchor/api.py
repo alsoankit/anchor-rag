@@ -1,9 +1,11 @@
 import json
 import queue
+import re
 import threading
+import uuid
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -150,3 +152,107 @@ def ask_stream(question: str, corpus: str = "aiact", k: int = 8,
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache",
                                       "X-Accel-Buffering": "no"})
+
+
+# Uploaded files, kept until the process restarts. Keyed by a token the browser hands back
+# when it decides to go ahead, so parsing and ingesting are two separate decisions.
+PENDING: dict = {}
+UPLOADS = HERE / "data" / "uploads"
+
+# Measured on this machine. Used only to tell the user roughly how long ingest will take,
+# so being a little wrong is fine and being silent is not.
+CHUNKS_PER_SECOND = 140
+TOKENS_PER_QUESTION = 2200
+TOKENS_PER_VERIFIED_QUESTION = 6800
+
+
+@app.post("/upload")
+async def upload(file: UploadFile):
+    """Parse a PDF and report what ingesting it would involve. Nothing is stored yet."""
+    from anchor import pdfs
+
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(400, "that is not a PDF")
+
+    UPLOADS.mkdir(parents=True, exist_ok=True)
+    name = re.sub(r"[^a-z0-9]+", "-", Path(file.filename).stem.lower()).strip("-")[:40] or "upload"
+    path = UPLOADS / f"{name}.pdf"
+    path.write_bytes(await file.read())
+
+    try:
+        units, info = pdfs.load(path, name)
+    except Exception as error:
+        raise HTTPException(400, f"could not read that PDF: {str(error)[:150]}")
+    if not units:
+        raise HTTPException(400, "no readable text in that PDF - it may be scanned images")
+
+    token = uuid.uuid4().hex
+    PENDING[token] = {"name": name, "units": units, "info": info}
+
+    return {
+        "token": token,
+        "corpus": name,
+        "filename": file.filename,
+        **info,
+        "seconds": max(1, round(info["units"] / CHUNKS_PER_SECOND)),
+        "ingest_tokens": 0,
+        "tokens_per_question": TOKENS_PER_QUESTION,
+        "tokens_per_verified_question": TOKENS_PER_VERIFIED_QUESTION,
+    }
+
+
+@app.get("/ingest/stream")
+def ingest_stream(token: str):
+    """Embed and store a parsed upload, reporting progress as it goes."""
+    pending = PENDING.get(token)
+    if not pending:
+        raise HTTPException(404, "nothing pending for that token")
+
+    from anchor.store import ingest_units
+
+    events: queue.Queue = queue.Queue()
+
+    def run():
+        try:
+            total = len(pending["units"])
+            events.put({"stage": "start", "total": total, "detail":
+                        f"embedding {total} chunks"})
+            ingest_units(pending["name"], pending["units"],
+                         on_progress=lambda done, n: events.put(
+                             {"stage": "progress", "done": done, "total": n}))
+            events.put({"stage": "done", "corpus": pending["name"],
+                        "detail": f"{total} chunks ready"})
+            PENDING.pop(token, None)
+        except Exception as error:
+            events.put({"stage": "error", "detail": str(error)[:300]})
+        finally:
+            events.put(None)
+
+    threading.Thread(target=run, daemon=True).start()
+
+    def stream():
+        while True:
+            item = events.get()
+            if item is None:
+                break
+            yield f"data: {json.dumps(item)}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/corpora")
+def corpora():
+    """Everything currently in the database, so the page can list it."""
+    from anchor.corpora import ABOUT
+    from anchor.store import connect
+
+    conn = connect()
+    try:
+        rows = conn.execute(
+            """select corpus, count(*) from chunks where strategy = 'structural'
+               group by corpus order by corpus""").fetchall()
+    finally:
+        conn.close()
+    return [{"id": c, "label": ABOUT.get(c, c), "chunks": n, "builtin": c in ABOUT}
+            for c, n in rows]

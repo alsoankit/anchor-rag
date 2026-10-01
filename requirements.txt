@@ -9,3 +9,5 @@ python-dotenv
 beautifulsoup4
 lxml
 httpx
+pymupdf
+python-multipart
