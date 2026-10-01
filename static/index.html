@@ -11,9 +11,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#070910; --card:rgba(22,27,38,.72); --raise:rgba(14,18,27,.8);
+  --bg:#070910; --card:rgba(22,27,38,.86); --raise:rgba(14,18,27,.88);
   --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.16);
-  --text:#f2f5fa; --soft:#b9c2d1; --dim:#828d9e;
+  --text:#f4f7fb; --soft:#c7cfdb; --dim:#9aa5b6;
   --blue:#6aa6ff; --green:#4ad16f; --red:#ff7b7b; --amber:#ffbe5c;
   --radius:18px;
 }
@@ -26,7 +26,7 @@ body{
 }
 
 /* the liquid backdrop: three slow blobs under a grain layer */
-.blobs{position:fixed;inset:0;z-index:-2;overflow:hidden;filter:blur(90px);opacity:.65}
+.blobs{position:fixed;inset:0;z-index:-2;overflow:hidden;filter:blur(100px);opacity:.5}
 .blob{position:absolute;border-radius:50%;mix-blend-mode:screen}
 .b1{width:720px;height:720px;left:-13%;top:-18%;background:radial-gradient(circle,#2b5cff,transparent 68%);
     animation:drift1 24s ease-in-out infinite}
@@ -39,7 +39,7 @@ body{
 @keyframes drift2{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(-180px,150px) scale(.88)}
   66%{transform:translate(-90px,-70px) scale(1.16)}}
 @keyframes drift3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(150px,-180px) scale(1.12)}}
-.grain{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.035;
+.grain{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.022;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E")}
 
 .wrap{max-width:1180px;margin:0 auto;padding:54px 26px 110px;position:relative}
@@ -62,7 +62,7 @@ h1{font-size:36px;font-weight:700;letter-spacing:-1.3px;
 
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
   padding:28px;margin-bottom:22px;
-  backdrop-filter:blur(26px) saturate(150%);-webkit-backdrop-filter:blur(26px) saturate(150%);
+  backdrop-filter:blur(30px) saturate(135%);-webkit-backdrop-filter:blur(30px) saturate(135%);
   box-shadow:0 20px 60px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.07)}
 .card h2{font-size:13px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;
   color:var(--dim);margin-bottom:18px}

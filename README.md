@@ -51,7 +51,11 @@ writing one adapter class.
 
 ## What it looks like
 
-![Anchor UI](docs/ui.png)
+![Anchor answering a question, with the pipeline, claim checks and sources](docs/ui.png)
+
+*Top: the pipeline after a run, each stage green with what it found. Bottom: the answer, every
+claim checked against its source, and the sources themselves — note `[1] Annex III(4)`, which
+plain search ranked below documents that merely discuss high-risk systems.*
 
 The interface is deliberately not a chat box. **The pipeline reports each stage as it reaches
 it, the API streams those over server-sent events, and the diagram lights up as they arrive** —
