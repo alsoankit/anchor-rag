@@ -258,9 +258,9 @@ pip install -r requirements.txt
 cp .env.example .env                      # add a Groq key. Several are supported.
 
 python -m anchor.cli ingest aiact         # ~4 min first time, cached after
-python -m anchor.cli ask "Which AI practices does the Regulation prohibit?"
 
-uvicorn anchor.api:app                    # or use the UI at localhost:8000
+uvicorn anchor.api:app                    # the UI, at localhost:8000
+python -m anchor.cli ask "Which AI practices does the Regulation prohibit?"   # or the CLI
 ```
 
 | command | what it does |
@@ -274,7 +274,8 @@ uvicorn anchor.api:app                    # or use the UI at localhost:8000
 | `eval.calibrate` | how much the faithfulness judge can be trusted |
 | `uvicorn anchor.api:app` | the UI at `/`, plus `/ask`, `/assess` and `/ask/stream` |
 
-`anchor.api` exposes `/ask` and `/assess` over FastAPI.
+`anchor.api` serves the UI at `/` and three endpoints: `/ask` and `/assess` return JSON once
+they are done, and `/ask/stream` reports each stage of the pipeline as it reaches it.
 
 **Adding a corpus** means one adapter class answering three questions: where the documents
 live, how one splits into units, and what a reference to another unit looks like in the text.
