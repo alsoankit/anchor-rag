@@ -1,10 +1,17 @@
+import json
+import queue
+import threading
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from anchor.answer import ask
 from anchor.assess import assess
 
 app = FastAPI(title="Anchor")
+HERE = Path(__file__).resolve().parent.parent
 
 
 class Question(BaseModel):
@@ -88,3 +95,58 @@ def post_assess(body: Description) -> Assessed:
         obligations=[Duty(**item) for item in report.obligations],
         searches=report.searches,
     )
+
+
+@app.get("/")
+def index():
+    return FileResponse(HERE / "static" / "index.html")
+
+
+@app.get("/ask/stream")
+def ask_stream(question: str, corpus: str = "aiact", k: int = 8,
+               hop: bool = True, gate: bool = True, check: bool = True):
+    """The same pipeline, but reporting each stage as it reaches it.
+
+    A full answer takes around ten seconds and nearly all of that is spent waiting on a
+    model. Returning only at the end makes the system look like a black box that pauses.
+    Server-sent events are the smallest thing that fixes it: the work runs on a thread,
+    pushes a line per stage onto a queue, and this generator forwards them as they arrive.
+    No websocket, no extra dependency, and the browser side is one EventSource.
+    """
+    events: queue.Queue = queue.Queue()
+
+    def run():
+        try:
+            result = ask(question, corpus=corpus, k=k, hop=hop, gate=gate, check=check,
+                         on_step=lambda stage, detail: events.put({"stage": stage,
+                                                                   "detail": detail}))
+            events.put({"stage": "result", "payload": {
+                "answer": result.text,
+                "refused": result.refused,
+                "reason": result.reason,
+                "seconds": round(result.seconds, 1),
+                "sources": [{"marker": n, "citation": h.citation,
+                             "score": round(h.score, 2), "followed_from": h.via,
+                             "text": h.text[:300]}
+                            for n, h in enumerate(result.hits, 1)],
+                "claims": [{"claim": c.claim, "supported": c.supported, "quote": c.quote}
+                           for c in result.checks],
+                "trace": result.trace,
+            }})
+        except Exception as error:
+            events.put({"stage": "error", "detail": str(error)[:300]})
+        finally:
+            events.put(None)
+
+    threading.Thread(target=run, daemon=True).start()
+
+    def stream():
+        while True:
+            item = events.get()
+            if item is None:
+                break
+            yield f"data: {json.dumps(item)}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache",
+                                      "X-Accel-Buffering": "no"})

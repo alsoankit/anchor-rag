@@ -89,33 +89,56 @@ def rewrite(question: str, corpus: str) -> str:
 
 def ask(question: str, corpus: str = "aiact", strategy: str = "structural",
         k: int = TOP_K, hop: bool = True, gate: bool = True, check: bool = True,
-        grounded_prompt: bool = True, conn=None) -> Answer:
+        grounded_prompt: bool = True, conn=None, on_step=None) -> Answer:
+    """on_step, if given, is called as each stage starts and finishes.
+
+    The pipeline takes ten seconds or so and most of that is waiting on a model. Without
+    this the caller sees nothing until the end and has no idea whether it is retrieving,
+    judging or verifying. The callback carries a stage name and a line of detail, which is
+    enough for a UI to show what is happening while it happens.
+    """
     started = time.time()
     trace: list[str] = []
     asked = question
 
+    def step(stage, detail=""):
+        if on_step:
+            on_step(stage, detail)
+
+    step("search", f"embedding the question and searching {corpus}")
     hits = retrieve(asked, corpus, strategy, k, hop=hop, conn=conn)
     if hits:
         trace.append(f"retrieved {len(hits)} chunks, best score {hits[0].score:.2f}")
     else:
         trace.append("retrieved nothing")
-    if hop:
-        followed = [h.citation for h in hits if h.followed]
-        if followed:
-            trace.append(f"followed citations into {', '.join(followed)}")
+    step("search.done", f"{len(hits)} chunks"
+         + (f", best score {hits[0].score:.2f}" if hits else ""))
+
+    followed = [h.citation for h in hits if h.followed] if hop else []
+    if followed:
+        trace.append(f"followed citations into {', '.join(followed)}")
+        step("hop", f"followed citations into {', '.join(followed)}")
+    elif hop:
+        step("hop", "nothing worth following")
 
     if gate:
         attempts = 0
+        step("gate", "scoring the evidence before generating")
         while not enough_evidence(asked, hits, trace):
             if attempts >= MAX_REWRITES:
+                step("refused", "the retrieved sources do not cover it")
                 return Answer(question=question, text=REFUSAL, refused=True,
                               reason="the retrieved sources do not cover it",
                               hits=hits, trace=trace, seconds=time.time() - started)
             attempts += 1
+            step("rewrite", "evidence too weak, rewriting the question")
             asked = rewrite(asked, corpus)
             trace.append(f"rewrote the question as: {asked}")
+            step("rewrite.done", asked)
             hits = retrieve(asked, corpus, strategy, k, hop=hop, conn=conn)
+        step("gate.done", trace[-1] if trace else "evidence accepted")
 
+    step("generate", "writing an answer from the sources only")
     text = write(
         ANSWER_USER.format(sources=format_sources(hits), question=question),
         system=ANSWER_SYSTEM if grounded_prompt else NAIVE_SYSTEM,
@@ -125,13 +148,19 @@ def ask(question: str, corpus: str = "aiact", strategy: str = "structural",
 
     if "NOT IN SOURCES" in text.upper():
         trace.append("the writer refused after reading the sources")
+        step("refused", "the writer refused after reading the sources")
         return Answer(question=question, text=REFUSAL, refused=True,
                       reason="the sources were retrieved but do not answer it",
                       hits=hits, trace=trace, seconds=time.time() - started)
 
+    step("generate.done", f"{len(text.split())} words")
+
+    if check:
+        step("verify", "splitting the answer into claims and checking each one")
     checks = verify(text, hits) if check else []
     if checks:
         bad = sum(1 for c in checks if not c.supported)
+        step("verify.done", f"{len(checks)} claims, {bad} unsupported")
         trace.append(f"checked {len(checks)} statements, {bad} unsupported")
 
     return Answer(question=question, text=text, refused=False, hits=hits,

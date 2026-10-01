@@ -35,15 +35,24 @@ the model is allowed to see; verification decides what it is allowed to say.**
 
 ![Anchor UI](docs/ui.png)
 
-The interface is deliberately not a chat box. The retrieved chunks, which of them arrived by
-following a citation, the gate's decision and the per-claim verdicts are all on screen next to
-the answer — because that is where the engineering is. The sidebar toggles let you switch the
-citation hop off and re-run, so the difference it makes is something you can watch rather than
-read about.
+The interface is deliberately not a chat box. **The pipeline reports each stage as it reaches
+it, the API streams those over server-sent events, and the diagram lights up as they arrive** —
+so you watch the retrieve, the citation hop, the gate's decision and the claim checks happen
+rather than staring at a spinner for ten seconds.
+
+A node glows while it runs and shows what it is doing, turns green with its result
+(`8 chunks, best score 0.74`), and turns red on a refusal. When the gate rejects weak evidence
+and triggers a rewrite, you see Gate go red and Retrieve fire a second time.
+
+The toggles switch stages off, so the difference the citation hop makes is something you can
+demonstrate rather than describe.
 
 ```bash
-streamlit run app.py
+uvicorn anchor.api:app        # then open localhost:8000
 ```
+
+Server-sent events rather than a websocket because the data only flows one way, server to
+browser. SSE is plain HTTP, reconnects by itself, and is about six lines in the page.
 
 On the command line:
 
@@ -251,7 +260,7 @@ cp .env.example .env                      # add a Groq key. Several are supporte
 python -m anchor.cli ingest aiact         # ~4 min first time, cached after
 python -m anchor.cli ask "Which AI practices does the Regulation prohibit?"
 
-streamlit run app.py                      # or use the UI
+uvicorn anchor.api:app                    # or use the UI at localhost:8000
 ```
 
 | command | what it does |
@@ -263,7 +272,7 @@ streamlit run app.py                      # or use the UI
 | `eval.sweep` | retrieval parameter sweep — free, no model calls |
 | `eval.run_eval` | the full ablation across pipeline configurations |
 | `eval.calibrate` | how much the faithfulness judge can be trusted |
-| `streamlit run app.py` | the UI, with pipeline toggles so you can see what each stage buys |
+| `uvicorn anchor.api:app` | the UI at `/`, plus `/ask`, `/assess` and `/ask/stream` |
 
 `anchor.api` exposes `/ask` and `/assess` over FastAPI.
 
