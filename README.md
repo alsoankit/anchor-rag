@@ -330,6 +330,43 @@ and threshold is visible and changeable, which is the point.
 
 ---
 
+## Where this goes next
+
+In order, and the first one gates the rest.
+
+**Harder evaluation questions.** At k=8 with the citation hop the eval set scores 1.00 across the
+board. That is not a success, it is a measurement problem: a saturated set cannot tell me whether
+the next change helped. Everything below is unmeasurable until this is fixed, so it goes first.
+Concretely that means questions needing two references followed, questions where the right answer
+is a specific sub-clause rather than an article, and more unanswerable ones that look answerable.
+
+**A cross-encoder reranker.** Right now the question and a chunk are embedded separately and
+compared. A cross-encoder reads them together and is substantially better at ordering the top
+results. I would expect it to beat the citation hop on single-hop questions and do nothing for
+multi-hop ones — a reranker still cannot surface a document retrieval never returned. Worth
+building partly to find out whether that prediction is right.
+
+**Multi-hop traversal.** One hop finds a document the answer cites. It does not find a document
+*that* document cites. The reason it is not built is retrieval noise: every hop multiplies the
+candidate set and the connection to the question gets weaker. Doing it properly means weighting
+paths by something better than a flat decay, and the eval set cannot currently tell me whether
+any of it worked.
+
+**Semantic edges, not just structural ones.** Today an edge means "this article cites that one",
+pulled out with a regex. The richer version is "this obligation applies to that actor", "this
+definition constrains that provision" — extracted with a model, stored as a typed graph. That is
+the point where a graph database earns its place over a join table.
+
+**Permission-filtered retrieval.** For any real deployment the retriever has to filter by the
+caller's permissions *before* ranking, not after. A retrieval system over internal documents that
+ignores who is asking is a data leak with a chat interface. Not built, and I would not ship this
+inside a company without it.
+
+**Human labels.** Every faithfulness number here is model-judged, and three judges agreeing tells
+me the signal is stable, not that it is correct. A few hundred hand-labelled claims would turn
+the agreement number into an accuracy number, and would also tell me which of the three judges to
+trust when they disagree.
+
 ## What broke
 
 The most useful part of this project. None of these threw an error.
